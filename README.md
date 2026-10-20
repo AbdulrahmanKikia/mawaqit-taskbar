@@ -26,6 +26,18 @@ A small strip above the taskbar shows the next prayer and countdown. Click for t
 If Windows shows a SmartScreen warning: **More info** → **Run anyway**  
 (the installer is not code-signed yet).
 
+Before installing on Windows 11, right-click the downloaded Setup → **Properties** → check **Unblock** → Apply (avoids some blocks).
+
+#### “Application Control policy has blocked this file” (error 4551)
+
+Install usually still succeeded; Windows blocked *starting* the unsigned `.exe`.
+
+1. Start menu → open **Mawaqit Widget** (or unblock the Setup file and reinstall).
+2. **Settings → Privacy & security → Windows Security → App & browser control → Smart App Control** → turn **Off** (or Evaluation), then launch again.
+3. On a **work/school** PC, only IT can allow it under company Application Control / WDAC.
+
+Long-term fix is a paid code-signing certificate (not included yet).
+
 ### Option B — Portable zip
 
 1. From the same [Releases](https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases) page, download **`MawaqitWidget-Portable-….zip`**
@@ -122,6 +134,7 @@ assets/           Icons, mosque map, Leaflet
 | Map blank / “Starting…” | Install WebView2; allow network |
 | No strip | Use the **tray** icon; or Quit and relaunch |
 | SmartScreen warning | More info → Run anyway |
+| Error **4551** / Application Control blocked | Unblock the download; disable Smart App Control; or ask IT (unsigned app) |
 | `cargo` / `link.exe` errors | Install Rust + VS C++ build tools |
 
 ### Notes

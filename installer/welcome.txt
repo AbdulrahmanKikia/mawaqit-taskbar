@@ -14,3 +14,8 @@ Requirements:
     (already included on most Windows 11 PCs)
 
 No programming tools are required.
+
+Before you continue (recommended on Windows 11):
+  If you downloaded this Setup from the web, right-click the
+  Setup .exe → Properties → check "Unblock" → Apply.
+  That avoids some SmartScreen / Application Control blocks.

@@ -11,11 +11,16 @@ For people who prefer not to use a Setup wizard:
 
 2. Double-click Install.bat
 
-3. Allow Windows / SmartScreen if it asks (More info → Run anyway)
-   The first download from GitHub may be unsigned.
+3. Allow Windows / SmartScreen if it asks (More info → Run anyway).
+   Tip: right-click Install.bat or widget.exe → Properties → Unblock.
 
 4. A prayer strip should appear above the taskbar on the left.
    Right-click → Change mosque… to pick your mosque.
+
+If Windows says "Application Control policy has blocked this file"
+(error 4551): the app is unsigned. Turn off Smart App Control
+(Windows Security → App & browser control), or ask IT on a work PC.
+You can also run widget.exe directly from this folder after Unblock.
 
 To remove: double-click Uninstall.bat
 

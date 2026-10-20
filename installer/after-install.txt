@@ -1,0 +1,26 @@
+Setup finished.
+
+If the prayer strip did not appear, open Start and launch "Mawaqit Widget".
+
+------------------------------------------------
+Blocked by Windows? (error 4551 / Application Control)
+------------------------------------------------
+The app is not code-signed yet, so Windows 11 Smart App Control
+or a work/school policy may block Mawaqit Widget.exe.
+
+Try this first:
+1. Right-click the Setup file you downloaded → Properties
+2. If you see "Unblock" at the bottom, check it → Apply → OK
+3. Run Setup again
+4. Start "Mawaqit Widget" from the Start menu
+
+If it still says Application Control blocked the file:
+• Settings → Privacy & security → Windows Security
+  → App & browser control → Smart App Control
+  → turn Off (or use Evaluation), then try again
+• On a work/school PC, ask IT to allow the app — only they can
+  override company Application Control / WDAC policy
+
+This is a Windows trust policy, not a failed install. The files
+are already in:
+  %LOCALAPPDATA%\Mawaqit Widget\

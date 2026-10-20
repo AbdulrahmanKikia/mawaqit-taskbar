@@ -5,7 +5,7 @@
 ; Expects release binary at dist\widget.exe (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.2"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
@@ -36,6 +36,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=no
 InfoBeforeFile=welcome.txt
+InfoAfterFile=after-install.txt
 LicenseFile=..\LICENSE
 
 [Languages]
@@ -57,8 +58,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
 
+; Launch is optional — auto-launch shows a scary error when Smart App Control
+; / Application Control blocks the unsigned exe (CreateProcess 4551).
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent unchecked; WorkingDir: "{app}"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -72,4 +75,20 @@ begin
   Exec('taskkill.exe', '/F /IM "Mawaqit Widget.exe"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM widget.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := True;
+end;
+
+procedure ClearMarkOfTheWeb(const FilePath: string);
+begin
+  // Removes the "downloaded from internet" ADS that SmartScreen often uses.
+  // Does NOT override enterprise WDAC / Smart App Control enforcement.
+  DeleteFile(FilePath + ':Zone.Identifier');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    ClearMarkOfTheWeb(ExpandConstant('{app}\{#MyAppExeName}'));
+    ClearMarkOfTheWeb(ExpandConstant('{app}\icon.ico'));
+  end;
 end;
