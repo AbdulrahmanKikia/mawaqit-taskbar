@@ -1,0 +1,16 @@
+Welcome to Mawaqit Widget
+
+This installs a small prayer-times strip above your Windows taskbar.
+
+After setup:
+  • A strip appears on the left above the taskbar
+  • Left-click it to see today's prayer times
+  • Right-click → "Change mosque…" to pick your mosque on a map
+
+Requirements:
+  • Windows 10 or Windows 11 (64-bit)
+  • Internet connection
+  • Microsoft Edge WebView2 Runtime
+    (already included on most Windows 11 PCs)
+
+No programming tools are required.

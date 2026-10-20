@@ -35,7 +35,14 @@ if (-not $widget) { throw "Could not find built widget.exe" }
 
 $Dist = Join-Path $Root "dist"
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
+
+# Unlock dist binaries if a previous test instance is still running
+Get-Process -Name "widget","Mawaqit Widget","mawaqit-widget" -ErrorAction SilentlyContinue |
+    Stop-Process -Force
+Start-Sleep -Milliseconds 400
+
 Copy-Item -Force $widget (Join-Path $Dist "widget.exe")
+
 
 $egui = Find-ReleaseExe "mawaqit-widget.exe"
 if ($egui) {
