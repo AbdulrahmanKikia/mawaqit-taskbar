@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+.env
+.DS_Store
+Thumbs.db
+.mawaqit-api-src/
+
+# Built binaries and WebView2 user-data (build with scripts/build-release.ps1)
+/dist/
+*.pdb
+*.exe
+!assets/
