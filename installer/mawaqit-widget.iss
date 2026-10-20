@@ -5,7 +5,7 @@
 ; Expects release binary at dist\widget.exe (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.1.2"
+#define MyAppVersion "0.1.3"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
