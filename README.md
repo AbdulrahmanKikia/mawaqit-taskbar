@@ -30,8 +30,7 @@ Optional (richer API for times): Docker **or** Python 3 for a local [mrsofiane/m
 ## Quick test (clone → run)
 
 ```powershell
-# Replace with your fork / remote URL once the repo is published
-git clone https://github.com/<you>/mawaqit-taskbar.git
+git clone https://github.com/AbdulrahmanKikia/mawaqit-taskbar.git
 cd mawaqit-taskbar
 
 # One-time: Rust toolchain (https://rustup.rs/) if you don't have cargo
