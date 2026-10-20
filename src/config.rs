@@ -133,6 +133,13 @@ pub fn cache_path() -> Result<PathBuf, Error> {
     Ok(project_dirs()?.cache_dir().join("cache.json"))
 }
 
+/// WebView2 user-data folder (writable AppData, not next to the exe).
+pub fn webview_data_dir() -> Option<PathBuf> {
+    project_dirs()
+        .ok()
+        .map(|p| p.data_local_dir().join("webview"))
+}
+
 pub fn load_config() -> Result<AppConfig, Error> {
     let path = config_path()?;
     if path.exists() {

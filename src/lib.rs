@@ -7,5 +7,6 @@ pub mod map_picker;
 pub mod mawaqit;
 pub mod notify;
 pub mod schedule;
+pub mod update;
 
 pub use error::Error;

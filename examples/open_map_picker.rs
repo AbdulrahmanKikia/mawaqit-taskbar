@@ -2,8 +2,10 @@
 #![windows_subsystem = "windows"]
 
 fn main() {
-    mawaqit_widget::map_picker::run(|hit| match hit {
+    if let Err(e) = mawaqit_widget::map_picker::run(|hit| match hit {
         Some(h) => println!("selected: {} ({})", h.label, h.slug),
         None => println!("cancelled"),
-    });
+    }) {
+        eprintln!("{e}");
+    }
 }

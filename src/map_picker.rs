@@ -19,10 +19,19 @@ use tao::platform::run_return::EventLoopExtRunReturn;
 use tao::platform::windows::EventLoopBuilderExtWindows;
 use wry::{
     http::{header::CONTENT_TYPE, Request, Response, StatusCode},
-    WebViewBuilder,
+    WebContext, WebViewBuilder,
 };
 
+use crate::config;
 use crate::mawaqit::{MawaqitClient, MosqueHit};
+
+#[cfg(target_os = "windows")]
+fn init_com_sta() {
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    }
+}
 
 const MAP_HTML: &str = include_str!("../assets/mosque_map.html");
 const MAP_JS: &str = include_str!("../assets/mosque_map.js");
@@ -60,7 +69,11 @@ enum UserEvent {
 /// Opens a WebView2 map window and invokes `on_done` with the selection (or `None` if closed).
 ///
 /// Runs a nested GUI event loop on the calling thread — spawn a thread before calling.
-pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) {
+/// Returns `Err` if the window/WebView2 could not be created (caller should show a fallback UI).
+pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    init_com_sta();
+
     let mut builder = EventLoopBuilder::<UserEvent>::with_user_event();
     #[cfg(target_os = "windows")]
     builder.with_any_thread(true);
@@ -68,25 +81,21 @@ pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) {
     let mut event_loop = builder.build();
     let proxy = event_loop.create_proxy();
 
-    let window = match WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_title("Mawaqit — Find mosque")
         .with_inner_size(LogicalSize::new(1040.0, 700.0))
         .with_min_inner_size(LogicalSize::new(860.0, 560.0))
         .with_visible(true)
         .with_focused(true)
+        .with_always_on_top(true)
         .build(&event_loop)
-    {
-        Ok(w) => w,
-        Err(e) => {
-            eprintln!("map picker window failed: {e}");
-            on_done(None);
-            return;
-        }
-    };
+        .map_err(|e| format!("Could not create map window: {e}"))?;
     window.set_focus();
 
+    let mut web_context = WebContext::new(config::webview_data_dir());
+
     let proxy_ipc = proxy.clone();
-    let webview = match WebViewBuilder::new()
+    let webview = WebViewBuilder::with_web_context(&mut web_context)
         .with_custom_protocol("mawaqit".into(), move |_id, request| {
             match protocol_response(request) {
                 Ok(r) => r.map(Into::into),
@@ -104,23 +113,15 @@ pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) {
             let _ = proxy_ipc.send_event(UserEvent::Ipc(body));
         })
         .build(&window)
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("map picker webview failed: {e}");
-            on_done(None);
-            return;
-        }
-    };
+        .map_err(|e| {
+            format!(
+                "Could not start the mosque map (WebView2). Install the Microsoft Edge WebView2 Runtime. Details: {e}"
+            )
+        })?;
+    let _ = window.set_always_on_top(false);
 
-    let client = match MawaqitClient::new("https://mawaqit.net") {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("map picker client failed: {e}");
-            on_done(None);
-            return;
-        }
-    };
+    let client = MawaqitClient::new("https://mawaqit.net")
+        .map_err(|e| format!("Could not start HTTP client: {e}"))?;
 
     let mut callback = Some(on_done);
 
@@ -194,6 +195,7 @@ pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) {
             _ => {}
         }
     });
+    Ok(())
 }
 
 fn protocol_response(

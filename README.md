@@ -136,6 +136,7 @@ assets/           Icons, mosque map, Leaflet
 | SmartScreen warning | More info → Run anyway |
 | Error **4551** / Application Control blocked | Unblock the download; disable Smart App Control; or ask IT (unsigned app) |
 | **VCRUNTIME140_1.dll was not found** | Use **v0.1.4+** (static CRT). Older builds need [VC++ Redistributable x64](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) |
+| Mosque setup window flashes and closes | Use **v0.1.5+** (native setup window). Optional map needs [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
 | `cargo` / `link.exe` errors | Install Rust + VS C++ build tools |
 
 ### Notes

@@ -17,7 +17,9 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::mem::size_of;
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -80,8 +82,11 @@ const WM_DATA: u32 = WM_USER + 66;
 const WM_SEARCH_DONE: u32 = WM_USER + 67;
 const WM_MOSQUE_PICKED: u32 = WM_USER + 68;
 const WM_CLICKAWAY: u32 = WM_USER + 69;
+const WM_OPEN_SETUP: u32 = WM_USER + 70;
+const WM_UPDATE_DONE: u32 = WM_USER + 71;
 const TIMER_TICK: usize = 1;
 const TIMER_REFRESH: usize = 2;
+const TIMER_SETUP: usize = 3;
 const ID_TRAY: u32 = 1;
 const IDM_SHOW: u16 = 1001;
 const IDM_HIDE: u16 = 1002;
@@ -89,6 +94,7 @@ const IDM_QUIT: u16 = 1003;
 const IDM_REFRESH: u16 = 1004;
 const IDM_MOSQUE: u16 = 1005;
 const IDM_PREFS: u16 = 1006;
+const IDM_UPDATE: u16 = 1007;
 const IDC_N_ENABLE: i32 = 3101;
 const IDC_N_FAJR: i32 = 3102;
 const IDC_N_DHUHR: i32 = 3103;
@@ -103,12 +109,14 @@ const IDC_N_MINUTES: i32 = 3111;
 const IDC_N_AUTOSTART: i32 = 3112;
 const IDC_N_SAVE: i32 = 3113;
 const IDC_N_CANCEL: i32 = 3114;
+const IDC_N_UPDATE: i32 = 3115;
 const IDC_EDIT: i32 = 2001;
 const IDC_LIST: i32 = 2002;
 const IDC_SEARCH: i32 = 2003;
 const IDC_SELECT: i32 = 2004;
 const IDC_STATUS: i32 = 2005;
 const IDC_CANCEL: i32 = 2006;
+const IDC_MAP: i32 = 2007;
 const REFRESH_EVERY_SECS: u64 = 45 * 60;
 
 static BAR_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -119,6 +127,25 @@ static MOUSE_HOOK: AtomicIsize = AtomicIsize::new(0);
 static FETCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SEARCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static PREFS_FIRST_RUN: AtomicBool = AtomicBool::new(false);
+static MAP_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+const DETACHED_PROCESS: u32 = 0x00000008;
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+enum UpdateOutcome {
+    UpToDate(String),
+    Available {
+        version: String,
+        name: String,
+        url: String,
+    },
+    Failed(String),
+    Ready(PathBuf),
+}
+
+static UPDATE: Mutex<Option<UpdateOutcome>> = Mutex::new(None);
 
 thread_local! {
     static STATE: RefCell<UiState> = RefCell::new(UiState::default());
@@ -251,7 +278,9 @@ fn main() {
 
         request_refresh(bar);
         if need_picker {
-            open_picker();
+            // Delay until the AppBar message loop is alive — opening WebView2
+            // immediately at startup often flashes and dies on other PCs.
+            let _ = SetTimer(bar, TIMER_SETUP, 700, None);
         }
 
         let mut msg = MSG::default();
@@ -700,6 +729,7 @@ unsafe fn show_tray_menu(hwnd: HWND) {
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_MOSQUE as usize, w!("Change mosque…"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_PREFS as usize, w!("Preferences…"));
+    let _ = AppendMenuW(menu, MF_STRING, IDM_UPDATE as usize, w!("Check for updates…"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_REFRESH as usize, w!("Refresh times"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT as usize, w!("Quit"));
 
@@ -722,6 +752,7 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         IDM_HIDE => show_bar(false),
         IDM_MOSQUE => open_picker(),
         IDM_PREFS => open_prefs(false),
+        IDM_UPDATE => start_update_check(hwnd, false),
         IDM_REFRESH => request_refresh(hwnd),
         IDM_QUIT => {
             PostQuitMessage(0);
@@ -916,6 +947,22 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
     add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 340, 380);
     set_check(hwnd, IDC_N_AUTOSTART, autostart);
 
+    let upd = wide_z("Check for updates…");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(upd.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        20,
+        380,
+        180,
+        28,
+        hwnd,
+        HMENU(IDC_N_UPDATE as isize as *mut _),
+        hinst,
+        None,
+    );
+
     let save = wide_z("Save");
     let _ = CreateWindowExW(
         WINDOW_EX_STYLE(0),
@@ -1031,6 +1078,10 @@ unsafe extern "system" fn prefs_proc(
                     let _ = DestroyWindow(hwnd);
                     LRESULT(0)
                 }
+                IDC_N_UPDATE => {
+                    start_update_check(hwnd, true);
+                    LRESULT(0)
+                }
                 _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
         }
@@ -1096,6 +1147,11 @@ unsafe extern "system" fn bar_proc(
             }
             LRESULT(0)
         }
+        WM_TIMER if wparam.0 == TIMER_SETUP => {
+            let _ = KillTimer(hwnd, TIMER_SETUP);
+            open_picker();
+            LRESULT(0)
+        }
         WM_DATA => {
             apply_fetch_result();
             refresh_chip();
@@ -1137,6 +1193,14 @@ unsafe extern "system" fn bar_proc(
         }
         WM_CLICKAWAY => {
             hide_flyout();
+            LRESULT(0)
+        }
+        WM_OPEN_SETUP => {
+            open_picker();
+            LRESULT(0)
+        }
+        WM_UPDATE_DONE => {
+            handle_update_done(hwnd);
             LRESULT(0)
         }
         WM_TRAY => {
@@ -1436,25 +1500,216 @@ fn refresh_chip() {
 }
 
 fn open_picker() {
-    // Only one map window at a time.
-    if PICKER_HWND.swap(1, Ordering::SeqCst) != 0 {
+    unsafe {
+        hide_flyout();
+        open_native_picker();
+    }
+}
+
+unsafe fn open_native_picker() {
+    let existing = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
+    if hwnd_ok(existing) {
+        let _ = ShowWindow(existing, SW_RESTORE);
+        let _ = SetForegroundWindow(existing);
+        return;
+    }
+    let hinst = STATE.with(|s| s.borrow().hinst);
+    let hwnd = CreateWindowExW(
+        WINDOW_EX_STYLE(WS_EX_APPWINDOW.0),
+        PICKER_CLASS,
+        w!("Mawaqit — Choose mosque"),
+        WINDOW_STYLE(
+            WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_VISIBLE.0 | WS_MINIMIZEBOX.0,
+        ),
+        180,
+        120,
+        540,
+        560,
+        None,
+        None,
+        hinst,
+        None,
+    )
+    .unwrap_or_default();
+    if hwnd_ok(hwnd) {
+        PICKER_HWND.store(hwnd_raw(hwnd), Ordering::SeqCst);
+        let _ = SetForegroundWindow(hwnd);
+    } else {
+        PICKER_HWND.store(0, Ordering::SeqCst);
+        let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
+        tray_balloon(
+            bar,
+            "Could not open mosque setup",
+            "Try again from the tray menu: Change mosque…",
+        );
+    }
+}
+
+unsafe fn picker_build_controls(hwnd: HWND) {
+    let hinst = STATE.with(|s| s.borrow().hinst);
+    let hint = wide_z(
+        "Paste a mawaqit.net mosque link, or type a name/city and Search. The map is optional.",
+    );
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(hint.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        16,
+        12,
+        500,
+        36,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
+        w!("EDIT"),
+        w!(""),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | ES_AUTOHSCROLL as u32),
+        16,
+        54,
+        380,
+        26,
+        hwnd,
+        HMENU(IDC_EDIT as isize as *mut _),
+        hinst,
+        None,
+    );
+    let search = wide_z("Search");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(search.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_DEFPUSHBUTTON as u32),
+        406,
+        52,
+        100,
+        28,
+        hwnd,
+        HMENU(IDC_SEARCH as isize as *mut _),
+        hinst,
+        None,
+    );
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
+        w!("LISTBOX"),
+        w!(""),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | WS_TABSTOP.0 | LBS_NOTIFY as u32),
+        16,
+        92,
+        490,
+        300,
+        hwnd,
+        HMENU(IDC_LIST as isize as *mut _),
+        hinst,
+        None,
+    );
+    let status = wide_z("Waiting for a mosque…");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(status.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        16,
+        400,
+        490,
+        22,
+        hwnd,
+        HMENU(IDC_STATUS as isize as *mut _),
+        hinst,
+        None,
+    );
+    let map = wide_z("Open map…");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(map.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        16,
+        432,
+        110,
+        32,
+        hwnd,
+        HMENU(IDC_MAP as isize as *mut _),
+        hinst,
+        None,
+    );
+    let use_sel = wide_z("Use selected mosque");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(use_sel.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        136,
+        432,
+        170,
+        32,
+        hwnd,
+        HMENU(IDC_SELECT as isize as *mut _),
+        hinst,
+        None,
+    );
+    let cancel = wide_z("Cancel");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(cancel.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        396,
+        432,
+        110,
+        32,
+        hwnd,
+        HMENU(IDC_CANCEL as isize as *mut _),
+        hinst,
+        None,
+    );
+}
+
+fn open_map_picker() {
+    if MAP_IN_FLIGHT.swap(true, Ordering::SeqCst) {
         return;
     }
     unsafe {
         hide_flyout();
+        let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
+        if hwnd_ok(native) {
+            let _ = ShowWindow(native, SW_HIDE);
+        }
     }
     let bar = BAR_HWND.load(Ordering::SeqCst);
     thread::spawn(move || {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            }
+        }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            mawaqit_widget::map_picker::run(move |hit| {
+            match mawaqit_widget::map_picker::run(move |hit| {
                 let _ = tx.send(hit);
-            });
-            // `run` returns after the window closes; the callback has already sent.
-            rx.try_recv().ok().flatten()
+            }) {
+                Ok(()) => rx.try_recv().ok().flatten(),
+                Err(e) => {
+                    unsafe {
+                        let msg = wide_z(&e);
+                        let _ = MessageBoxW(
+                            HWND::default(),
+                            PCWSTR(msg.as_ptr()),
+                            w!("Mawaqit map"),
+                            MB_OK | MB_ICONWARNING,
+                        );
+                    }
+                    None
+                }
+            }
         }));
-        // Always clear — including panic — so Change mosque can be tried again.
-        PICKER_HWND.store(0, Ordering::SeqCst);
+        MAP_IN_FLIGHT.store(false, Ordering::SeqCst);
         match result {
             Ok(Some(hit)) => {
                 let mut cfg = config::load_config().unwrap_or_default();
@@ -1464,6 +1719,10 @@ fn open_picker() {
                 });
                 if config::save_config(&cfg).is_ok() {
                     unsafe {
+                        let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
+                        if hwnd_ok(native) {
+                            let _ = DestroyWindow(native);
+                        }
                         let _ = PostMessageW(
                             hwnd_from(bar),
                             WM_MOSQUE_PICKED,
@@ -1473,19 +1732,154 @@ fn open_picker() {
                     }
                 }
             }
-            Ok(None) => {}
-            Err(_) => unsafe {
-                let hwnd = hwnd_from(bar);
-                if hwnd_ok(hwnd) {
-                    tray_balloon(
-                        hwnd,
-                        "Map picker failed",
-                        "Could not open the mosque map. Try again, or paste a mawaqit.net link.",
-                    );
+            _ => unsafe {
+                let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
+                if hwnd_ok(native) {
+                    let _ = ShowWindow(native, SW_SHOW);
+                    let _ = SetForegroundWindow(native);
+                } else {
+                    let _ = PostMessageW(hwnd_from(bar), WM_OPEN_SETUP, WPARAM(0), LPARAM(0));
                 }
             },
         }
     });
+}
+
+fn start_update_check(hwnd: HWND, _from_prefs: bool) {
+    if UPDATE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        unsafe {
+            let msg = wide_z("Already checking for updates…");
+            let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK);
+        }
+        return;
+    }
+    unsafe {
+        tray_balloon(
+            hwnd_from(BAR_HWND.load(Ordering::SeqCst)),
+            "Checking for updates",
+            "Looking up the latest GitHub release…",
+        );
+    }
+    let hwnd_raw = hwnd_raw(hwnd);
+    thread::spawn(move || {
+        let outcome = match mawaqit_widget::update::fetch_latest() {
+            Ok(rel) => {
+                if mawaqit_widget::update::is_newer(&rel.version, mawaqit_widget::update::current_version())
+                {
+                    UpdateOutcome::Available {
+                        version: rel.version,
+                        name: rel.setup_name,
+                        url: rel.setup_url,
+                    }
+                } else {
+                    UpdateOutcome::UpToDate(rel.version)
+                }
+            }
+            Err(e) => UpdateOutcome::Failed(e.to_string()),
+        };
+        {
+            let mut slot = UPDATE.lock().unwrap_or_else(|e| e.into_inner());
+            *slot = Some(outcome);
+        }
+        UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+        unsafe {
+            let _ = PostMessageW(hwnd_from(hwnd_raw), WM_UPDATE_DONE, WPARAM(0), LPARAM(0));
+        }
+    });
+}
+
+fn start_update_download(hwnd: HWND, url: String, name: String) {
+    if UPDATE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    unsafe {
+        tray_balloon(
+            hwnd,
+            "Downloading update",
+            "The installer will run when the download finishes.",
+        );
+    }
+    let hwnd_raw = hwnd_raw(hwnd);
+    thread::spawn(move || {
+        let dest = mawaqit_widget::update::staging_setup_path(&name);
+        let outcome = match mawaqit_widget::update::download_setup(&url, &dest) {
+            Ok(()) => UpdateOutcome::Ready(dest),
+            Err(e) => UpdateOutcome::Failed(format!("Download failed: {e}")),
+        };
+        {
+            let mut slot = UPDATE.lock().unwrap_or_else(|e| e.into_inner());
+            *slot = Some(outcome);
+        }
+        UPDATE_IN_FLIGHT.store(false, Ordering::SeqCst);
+        unsafe {
+            let _ = PostMessageW(hwnd_from(hwnd_raw), WM_UPDATE_DONE, WPARAM(0), LPARAM(0));
+        }
+    });
+}
+
+unsafe fn apply_downloaded_update(hwnd: HWND, setup: PathBuf) {
+    match mawaqit_widget::update::write_apply_script(&setup) {
+        Ok(script) => {
+            let _ = Command::new("cmd")
+                .args(["/C", &script.to_string_lossy()])
+                .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+                .spawn();
+            PostQuitMessage(0);
+        }
+        Err(e) => {
+            let msg = wide_z(&format!("Could not start updater: {e}"));
+            let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONERROR);
+        }
+    }
+}
+
+unsafe fn handle_update_done(hwnd: HWND) {
+    let taken = {
+        let mut slot = UPDATE.lock().unwrap_or_else(|e| e.into_inner());
+        slot.take()
+    };
+    let Some(outcome) = taken else {
+        return;
+    };
+    match outcome {
+        UpdateOutcome::UpToDate(v) => {
+            let msg = wide_z(&format!(
+                "You are on the latest version ({v})."
+            ));
+            let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONINFORMATION);
+        }
+        UpdateOutcome::Available { version, name, url } => {
+            let msg = wide_z(&format!(
+                "Version {version} is available (you have {}).\n\nDownload and install now?",
+                mawaqit_widget::update::current_version()
+            ));
+            let ans = MessageBoxW(
+                hwnd,
+                PCWSTR(msg.as_ptr()),
+                w!("Mawaqit update"),
+                MB_YESNO | MB_ICONQUESTION,
+            );
+            if ans == IDYES {
+                start_update_download(hwnd, url, name);
+            }
+        }
+        UpdateOutcome::Failed(e) => {
+            let msg = wide_z(&e);
+            let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONWARNING);
+        }
+        UpdateOutcome::Ready(path) => {
+            let msg = wide_z(
+                "Update downloaded. Mawaqit will close, install the new version, then reopen.",
+            );
+            let _ = MessageBoxW(
+                hwnd,
+                PCWSTR(msg.as_ptr()),
+                w!("Mawaqit update"),
+                MB_OK | MB_ICONINFORMATION,
+            );
+            apply_downloaded_update(hwnd, path);
+        }
+    }
 }
 
 unsafe fn set_picker_status(hwnd: HWND, text: &str) {
@@ -1623,6 +2017,10 @@ unsafe extern "system" fn picker_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_CREATE => {
+            picker_build_controls(hwnd);
+            LRESULT(0)
+        }
         WM_COMMAND => {
             let id = (wparam.0 as u16) as i32;
             let code = (wparam.0 >> 16) as u16;
@@ -1633,6 +2031,10 @@ unsafe extern "system" fn picker_proc(
                 }
                 IDC_SELECT => {
                     picker_select(hwnd);
+                    LRESULT(0)
+                }
+                IDC_MAP => {
+                    open_map_picker();
                     LRESULT(0)
                 }
                 IDC_CANCEL => {
