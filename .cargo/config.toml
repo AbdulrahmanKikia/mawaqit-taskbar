@@ -1,0 +1,4 @@
+# Static MSVC CRT so machines without Visual C++ Redistributable
+# do not fail with "VCRUNTIME140_1.dll was not found".
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
