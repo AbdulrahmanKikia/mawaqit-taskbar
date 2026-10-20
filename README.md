@@ -131,12 +131,12 @@ assets/           Icons, mosque map, Leaflet
 
 | Symptom | What to check |
 |---------|----------------|
-| Map blank / “Starting…” | Install WebView2; allow network |
+| Map error / 0x80070002 | Use **v0.1.6+**. The map opens in your browser if WebView2 fails. |
 | No strip | Use the **tray** icon; or Quit and relaunch |
 | SmartScreen warning | More info → Run anyway |
 | Error **4551** / Application Control blocked | Unblock the download; disable Smart App Control; or ask IT (unsigned app) |
 | **VCRUNTIME140_1.dll was not found** | Use **v0.1.4+** (static CRT). Older builds need [VC++ Redistributable x64](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) |
-| Mosque setup window flashes and closes | Use **v0.1.5+** (native setup window). Optional map needs [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
+| Mosque setup window flashes and closes | Use **v0.1.5+** (native setup window). Map uses WebView2 when possible, otherwise your browser |
 | `cargo` / `link.exe` errors | Install Rust + VS C++ build tools |
 
 ### Notes

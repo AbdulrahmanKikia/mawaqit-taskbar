@@ -1669,6 +1669,106 @@ unsafe fn picker_build_controls(hwnd: HWND) {
     );
 }
 
+unsafe fn offer_webview2_install(err: &str) -> bool {
+    let installed = mawaqit_widget::webview2_rt::is_installed();
+    let body = if installed {
+        format!(
+            "{err}\n\nWebView2 looks installed but failed to start.\nInstall/repair it now, then retry the map?"
+        )
+    } else {
+        format!(
+            "{err}\n\nThe map needs Microsoft Edge WebView2 (missing on this PC).\nDownload and install it now? (about a minute; mosque search still works without it.)"
+        )
+    };
+    let msg = wide_z(&body);
+    let ans = MessageBoxW(
+        HWND::default(),
+        PCWSTR(msg.as_ptr()),
+        w!("Mawaqit map"),
+        MB_YESNO | MB_ICONWARNING,
+    );
+    if ans != IDYES {
+        return false;
+    }
+    let wait = wide_z("Installing WebView2… this can take a minute.");
+    let _ = MessageBoxW(
+        HWND::default(),
+        PCWSTR(wait.as_ptr()),
+        w!("Mawaqit"),
+        MB_OK | MB_ICONINFORMATION,
+    );
+    match mawaqit_widget::webview2_rt::install_silent() {
+        Ok(()) => true,
+        Err(e) => {
+            let fail = wide_z(&format!(
+                "{e}\n\nOpen Microsoft’s WebView2 page in your browser instead?"
+            ));
+            let go = MessageBoxW(
+                HWND::default(),
+                PCWSTR(fail.as_ptr()),
+                w!("Mawaqit map"),
+                MB_YESNO | MB_ICONWARNING,
+            );
+            if go == IDYES {
+                let _ = Command::new("cmd")
+                    .args([
+                        "/C",
+                        "start",
+                        "",
+                        mawaqit_widget::webview2_rt::BOOTSTRAPPER_URL,
+                    ])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+            }
+            false
+        }
+    }
+}
+
+fn pick_mosque_on_map() -> Option<MosqueHit> {
+    mawaqit_widget::webview2_rt::prepare();
+    if !mawaqit_widget::webview2_rt::is_usable() {
+        let _ = unsafe {
+            offer_webview2_install(
+                "The in-app map needs Microsoft Edge WebView2, which is missing on this PC.",
+            )
+        };
+        mawaqit_widget::webview2_rt::prepare();
+    }
+
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    match mawaqit_widget::map_picker::run(move |hit| {
+        let _ = tx.send(hit);
+    }) {
+        Ok(()) => return rx.try_recv().ok().flatten(),
+        Err(_) => {}
+    }
+
+    // Windows 11 can report WebView2 as installed and still fail with
+    // HRESULT 0x80070002 (“Package dependency criteria could not be resolved”).
+    // Same map in the default browser still lets people search and pick.
+    let (tx2, rx2) = std::sync::mpsc::sync_channel(1);
+    match mawaqit_widget::map_picker::run_in_browser(move |hit| {
+        let _ = tx2.send(hit);
+    }) {
+        Ok(()) => rx2.try_recv().ok().flatten(),
+        Err(e) => {
+            unsafe {
+                let msg = wide_z(&format!(
+                    "{e}\n\nYou can still search by name or paste a mawaqit.net link in the setup window."
+                ));
+                let _ = MessageBoxW(
+                    HWND::default(),
+                    PCWSTR(msg.as_ptr()),
+                    w!("Mawaqit map"),
+                    MB_OK | MB_ICONWARNING,
+                );
+            }
+            None
+        }
+    }
+}
+
 fn open_map_picker() {
     if MAP_IN_FLIGHT.swap(true, Ordering::SeqCst) {
         return;
@@ -1690,24 +1790,7 @@ fn open_map_picker() {
             }
         }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            match mawaqit_widget::map_picker::run(move |hit| {
-                let _ = tx.send(hit);
-            }) {
-                Ok(()) => rx.try_recv().ok().flatten(),
-                Err(e) => {
-                    unsafe {
-                        let msg = wide_z(&e);
-                        let _ = MessageBoxW(
-                            HWND::default(),
-                            PCWSTR(msg.as_ptr()),
-                            w!("Mawaqit map"),
-                            MB_OK | MB_ICONWARNING,
-                        );
-                    }
-                    None
-                }
-            }
+            pick_mosque_on_map()
         }));
         MAP_IN_FLIGHT.store(false, Ordering::SeqCst);
         match result {

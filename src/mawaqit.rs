@@ -217,8 +217,10 @@ impl MawaqitClient {
             return Ok(Vec::new());
         }
 
-        // Direct URL / slug → resolve for a real display name.
-        if normalize_mosque_input(word).is_some() {
+        // A pasted mawaqit.net URL is a sure mosque id. A single word like
+        // "Paris" also matches the bare-slug heuristic, but that is a city
+        // search — do not 404 mawaqit.net/en/paris and abort.
+        if extract_slug_from_url(word).is_some() {
             let resolved = self.resolve_mosque(word)?;
             return Ok(vec![MosqueHit {
                 slug: resolved.slug,
@@ -226,6 +228,16 @@ impl MawaqitClient {
                 lat: None,
                 lon: None,
             }]);
+        }
+        if word.contains('-') && normalize_mosque_input(word).is_some() {
+            if let Ok(resolved) = self.resolve_mosque(word) {
+                return Ok(vec![MosqueHit {
+                    slug: resolved.slug,
+                    label: resolved.name,
+                    lat: None,
+                    lon: None,
+                }]);
+            }
         }
 
         // Geocode the query → country map → filter by name/city/zip/slug.
@@ -819,6 +831,14 @@ mod tests {
     }
 
     #[test]
+    fn city_names_are_not_pasted_urls() {
+        assert!(extract_slug_from_url("Paris").is_none());
+        assert!(extract_slug_from_url("Montreal").is_none());
+        assert!(extract_slug_from_url("Aisha").is_none());
+        assert!(extract_slug_from_url("https://mawaqit.net/en/assalam-argenteuil").is_some());
+    }
+
+    #[test]
     fn iqama_from_conf_calendar() {
         let conf = serde_json::json!({
             "iqamaCalendar": [
@@ -847,6 +867,25 @@ mod tests {
             .iqama_for_day("icq", now.month(), now.day())
             .unwrap();
         assert!(iqama_has_values(&iq), "expected iqama from ICQ page");
+    }
+
+    #[test]
+    #[ignore = "network"]
+    fn live_search_city() {
+        let client = MawaqitClient::new("https://mawaqit.net").unwrap();
+        let hits = client
+            .search_mosques("Paris")
+            .expect("city search should not treat Paris as a missing mosque slug");
+        assert!(
+            !hits.is_empty(),
+            "expected mosques for Paris, got none"
+        );
+        assert!(
+            hits.iter().any(|h| h.label.to_ascii_lowercase().contains("paris")
+                || h.slug.to_ascii_lowercase().contains("paris")),
+            "expected a Paris hit, got {:?}",
+            hits.iter().map(|h| &h.label).collect::<Vec<_>>()
+        );
     }
 
     #[test]

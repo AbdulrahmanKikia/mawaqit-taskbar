@@ -5,7 +5,7 @@
 ; Expects release binary at dist\widget.exe (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.1.5"
+#define MyAppVersion "0.1.6"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
@@ -67,6 +67,61 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags
 Type: filesandordirs; Name: "{app}"
 
 [Code]
+var
+  DownloadPage: TDownloadWizardPage;
+
+function WebView2Installed: Boolean;
+var
+  Pv: String;
+begin
+  Result := False;
+  if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv)
+     and (Pv <> '') and (Pv <> '0.0.0.0') then
+    Result := True;
+  if not Result then
+    if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv)
+       and (Pv <> '') and (Pv <> '0.0.0.0') then
+      Result := True;
+  if not Result then
+    if RegQueryStringValue(HKCU, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv)
+       and (Pv <> '') and (Pv <> '0.0.0.0') then
+      Result := True;
+end;
+
+procedure InitializeWizard;
+begin
+  DownloadPage := CreateDownloadPage(
+    'Microsoft Edge WebView2',
+    'The mosque map needs WebView2. Setup will download it if it is missing.',
+    nil);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if CurPageID = wpReady then
+  begin
+    if not WebView2Installed then
+    begin
+      DownloadPage.Clear;
+      DownloadPage.Add('https://go.microsoft.com/fwlink/p/?LinkId=2124703', 'MicrosoftEdgeWebview2Setup.exe', '');
+      DownloadPage.Show;
+      try
+        try
+          DownloadPage.Download;
+          Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        except
+          MsgBox('Could not install WebView2 automatically. You can still search mosques by name; the map needs WebView2 from Microsoft.', mbInformation, MB_OK);
+        end;
+      finally
+        DownloadPage.Hide;
+      end;
+    end;
+  end;
+end;
+
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;

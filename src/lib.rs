@@ -8,5 +8,6 @@ pub mod mawaqit;
 pub mod notify;
 pub mod schedule;
 pub mod update;
+pub mod webview2_rt;
 
 pub use error::Error;

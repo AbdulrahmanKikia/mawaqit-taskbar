@@ -10,8 +10,8 @@ After setup:
 Requirements:
   • Windows 10 or Windows 11 (64-bit)
   • Internet connection
-  • Microsoft Edge WebView2 Runtime
-    (already included on most Windows 11 PCs)
+  • Microsoft Edge WebView2 Runtime for the in-app mosque map
+    (Setup installs it if missing; the map can also open in your browser)
 
 No programming tools are required.
 

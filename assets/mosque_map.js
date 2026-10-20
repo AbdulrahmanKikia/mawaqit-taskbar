@@ -12,13 +12,36 @@
   let suppressMove = false;
   let map = null;
 
+  function applyIpcResult(res) {
+    if (!res) return;
+    if (res.mosques) {
+      window.__setMosques(res.mosques, res.message || '', !!res.fit);
+    } else if (res.error) {
+      window.__setError(res.error);
+    } else if (res.ok === 'selected') {
+      document.body.innerHTML =
+        '<p style="padding:24px;font:16px/1.4 system-ui">Mosque saved. You can close this tab.</p>';
+    }
+  }
+
   function ipc(payload) {
     const data = JSON.stringify(payload);
     if (window.ipc && typeof window.ipc.postMessage === 'function') {
       window.ipc.postMessage(data);
-    } else if (window.chrome && window.chrome.webview) {
-      window.chrome.webview.postMessage(data);
+      return;
     }
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage(data);
+      return;
+    }
+    fetch('/ipc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: data,
+    })
+      .then((r) => r.json())
+      .then(applyIpcResult)
+      .catch((e) => setStatus(String(e)));
   }
 
   function setStatus(text) {
@@ -126,7 +149,7 @@
     });
   }
 
-  window.__setMosques = function (list, message) {
+  window.__setMosques = function (list, message, fit) {
     const keepSlug = selected && selected.slug;
     mosques = Array.isArray(list) ? list : [];
     selected = keepSlug ? mosques.find((m) => m.slug === keepSlug) || null : null;
@@ -142,6 +165,19 @@
     );
     renderList();
     renderMarkers();
+    if (fit && map) {
+      const withCoords = mosques.filter((m) => m.lat != null && m.lon != null);
+      if (withCoords.length) {
+        const b = L.latLngBounds(withCoords.map((m) => [m.lat, m.lon]));
+        if (b.isValid()) {
+          suppressMove = true;
+          map.fitBounds(b, { padding: [28, 28], maxZoom: 13 });
+          setTimeout(() => {
+            suppressMove = false;
+          }, 500);
+        }
+      }
+    }
   };
 
   window.__setError = function (message) {
