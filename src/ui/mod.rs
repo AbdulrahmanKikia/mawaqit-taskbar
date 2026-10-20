@@ -16,7 +16,7 @@ use crate::mawaqit::{
 };
 use crate::schedule::{
     build_day_schedule, format_countdown, next_prayer_with_tomorrow, now_local, today_local,
-    DaySchedule, NextPrayer, PrayerKind,
+    DaySchedule, NextPrayer,
 };
 use crate::theme::ShellTheme;
 use chrono::Datelike;
@@ -147,12 +147,7 @@ impl App {
     fn apply_times(&mut self, times: PrayerTimes, iqama: IqamaTimes) {
         let date = today_local();
         let schedule = build_day_schedule(date, &times, &iqama);
-        let fajr = schedule
-            .slots
-            .iter()
-            .find(|s| s.kind == PrayerKind::Fajr)
-            .map(|s| s.adhan);
-        self.next = next_prayer_with_tomorrow(&schedule, fajr, now_local());
+        self.next = next_prayer_with_tomorrow(&schedule, now_local(), self.config.countdown);
         self.schedule = Some(schedule);
     }
 
@@ -526,12 +521,7 @@ impl eframe::App for App {
         ctx.request_repaint_after(Duration::from_millis(250));
 
         if let Some(schedule) = &self.schedule {
-            let fajr = schedule
-                .slots
-                .iter()
-                .find(|s| s.kind == PrayerKind::Fajr)
-                .map(|s| s.adhan);
-            self.next = next_prayer_with_tomorrow(schedule, fajr, now_local());
+            self.next = next_prayer_with_tomorrow(schedule, now_local(), self.config.countdown);
         }
 
         let needs_refresh = match self.last_refresh {
@@ -627,8 +617,9 @@ impl eframe::App for App {
                     } else {
                         match &self.next {
                             Some(n) => format!(
-                                "{} {} · {}",
+                                "{}{} {} · {}",
                                 n.kind.label(),
+                                if n.to_iqama { " iqama" } else { "" },
                                 n.at.format("%H:%M"),
                                 format_countdown(n.remaining)
                             ),

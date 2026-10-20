@@ -1,5 +1,6 @@
 use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
+use crate::config::CountdownTarget;
 use crate::mawaqit::{IqamaTimes, PrayerTimes};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +69,7 @@ pub struct PrayerSlot {
     pub kind: PrayerKind,
     pub adhan: NaiveTime,
     pub adhan_display: String,
+    pub iqama: Option<NaiveTime>,
     pub iqama_display: Option<String>,
 }
 
@@ -82,6 +84,8 @@ pub struct NextPrayer {
     pub kind: PrayerKind,
     pub at: NaiveDateTime,
     pub remaining: Duration,
+    /// True when `at` is the iqama time, not adhan.
+    pub to_iqama: bool,
 }
 
 pub fn build_day_schedule(
@@ -94,53 +98,68 @@ pub fn build_day_schedule(
         let Some(adhan) = parse_hhmm(kind.adhan_raw(times)) else {
             continue;
         };
-        let iqama_display = kind
+        let iqama_time = kind
             .iqama_raw(iqama)
-            .and_then(|raw| resolve_iqama_display(adhan, raw));
+            .and_then(|raw| resolve_iqama_time(adhan, raw));
+        let iqama_display = iqama_time
+            .map(format_hhmm)
+            .or_else(|| kind.iqama_raw(iqama).map(str::to_string));
         slots.push(PrayerSlot {
             kind,
             adhan,
             adhan_display: format_hhmm(adhan),
+            iqama: iqama_time,
             iqama_display,
         });
     }
     DaySchedule { date, slots }
 }
 
-pub fn next_prayer(schedule: &DaySchedule, now: NaiveDateTime) -> Option<NextPrayer> {
+fn slot_target_time(slot: &PrayerSlot, target: CountdownTarget) -> (NaiveTime, bool) {
+    match target {
+        CountdownTarget::Iqama => match slot.iqama {
+            Some(t) => (t, true),
+            None => (slot.adhan, false),
+        },
+        CountdownTarget::Adhan => (slot.adhan, false),
+    }
+}
+
+pub fn next_prayer(
+    schedule: &DaySchedule,
+    now: NaiveDateTime,
+    target: CountdownTarget,
+) -> Option<NextPrayer> {
     for slot in &schedule.slots {
         if slot.kind == PrayerKind::Shuruq {
             continue;
         }
-        let at = schedule.date.and_time(slot.adhan);
+        let (time, to_iqama) = slot_target_time(slot, target);
+        let at = schedule.date.and_time(time);
         if at > now {
             return Some(NextPrayer {
                 kind: slot.kind,
                 at,
                 remaining: at - now,
+                to_iqama,
             });
         }
     }
     None
 }
 
-/// After Isha, treat next as tomorrow Fajr when we have tomorrow's times.
+/// After Isha, treat next as tomorrow Fajr (adhan or iqama, matching `target`).
 pub fn next_prayer_with_tomorrow(
     today: &DaySchedule,
-    tomorrow_fajr: Option<NaiveTime>,
     now: NaiveDateTime,
+    target: CountdownTarget,
 ) -> Option<NextPrayer> {
-    if let Some(n) = next_prayer(today, now) {
+    if let Some(n) = next_prayer(today, now, target) {
         return Some(n);
     }
-    let fajr = tomorrow_fajr.or_else(|| {
-        today
-            .slots
-            .iter()
-            .find(|s| s.kind == PrayerKind::Fajr)
-            .map(|s| s.adhan)
-    })?;
-    let at = (today.date + Duration::days(1)).and_time(fajr);
+    let fajr = today.slots.iter().find(|s| s.kind == PrayerKind::Fajr)?;
+    let (time, to_iqama) = slot_target_time(fajr, target);
+    let at = (today.date + Duration::days(1)).and_time(time);
     if at <= now {
         return None;
     }
@@ -148,6 +167,7 @@ pub fn next_prayer_with_tomorrow(
         kind: PrayerKind::Fajr,
         at,
         remaining: at - now,
+        to_iqama,
     })
 }
 
@@ -181,7 +201,7 @@ pub fn parse_hhmm(raw: &str) -> Option<NaiveTime> {
     None
 }
 
-fn resolve_iqama_display(adhan: NaiveTime, raw: &str) -> Option<String> {
+fn resolve_iqama_time(adhan: NaiveTime, raw: &str) -> Option<NaiveTime> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
@@ -189,13 +209,21 @@ fn resolve_iqama_display(adhan: NaiveTime, raw: &str) -> Option<String> {
     if let Some(rest) = raw.strip_prefix('+') {
         let mins: i64 = rest.parse().ok()?;
         let base = NaiveDate::from_ymd_opt(2000, 1, 1)?.and_time(adhan);
-        let resolved = base + Duration::minutes(mins);
-        return Some(format_hhmm(resolved.time()));
+        return Some((base + Duration::minutes(mins)).time());
     }
-    if parse_hhmm(raw).is_some() {
-        return Some(raw.to_string());
-    }
-    Some(raw.to_string())
+    parse_hhmm(raw)
+}
+
+#[cfg(test)]
+fn resolve_iqama_display(adhan: NaiveTime, raw: &str) -> Option<String> {
+    resolve_iqama_time(adhan, raw).map(format_hhmm).or_else(|| {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            None
+        } else {
+            Some(raw.to_string())
+        }
+    })
 }
 
 pub fn today_local() -> NaiveDate {
@@ -223,5 +251,36 @@ mod tests {
     fn countdown_format() {
         assert_eq!(format_countdown(Duration::seconds(65)), "01:05");
         assert_eq!(format_countdown(Duration::seconds(3661)), "1:01:01");
+    }
+
+    #[test]
+    fn countdown_adhan_vs_iqama() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let times = PrayerTimes {
+            fajr: "05:00".into(),
+            sunrise: "06:30".into(),
+            dohr: "13:00".into(),
+            asr: "16:00".into(),
+            maghreb: "18:00".into(),
+            icha: "19:30".into(),
+        };
+        let iqama = IqamaTimes {
+            fajr: "+10".into(),
+            dohr: "+15".into(),
+            asr: "+10".into(),
+            maghreb: "+5".into(),
+            icha: "+10".into(),
+        };
+        let sched = build_day_schedule(date, &times, &iqama);
+        let now = date.and_time(NaiveTime::from_hms_opt(13, 5, 0).unwrap());
+
+        let adhan = next_prayer(&sched, now, CountdownTarget::Adhan).unwrap();
+        assert_eq!(adhan.kind, PrayerKind::Asr);
+        assert!(!adhan.to_iqama);
+
+        let iq = next_prayer(&sched, now, CountdownTarget::Iqama).unwrap();
+        assert_eq!(iq.kind, PrayerKind::Dhuhr);
+        assert!(iq.to_iqama);
+        assert_eq!(format_hhmm(iq.at.time()), "13:15");
     }
 }

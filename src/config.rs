@@ -19,6 +19,29 @@ pub struct AppConfig {
     pub start_with_windows: bool,
     #[serde(default)]
     pub notifications: NotificationPrefs,
+    /// What the taskbar countdown counts down to. Default: adhan.
+    #[serde(default)]
+    pub countdown: CountdownTarget,
+}
+
+/// What the bar countdown aims at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CountdownTarget {
+    Adhan,
+    Iqama,
+}
+
+impl Default for CountdownTarget {
+    fn default() -> Self {
+        Self::Adhan
+    }
+}
+
+impl CountdownTarget {
+    pub fn is_iqama(self) -> bool {
+        matches!(self, Self::Iqama)
+    }
 }
 
 fn default_true() -> bool {
@@ -103,6 +126,7 @@ impl Default for AppConfig {
             mosque: None,
             start_with_windows: true,
             notifications: NotificationPrefs::default(),
+            countdown: CountdownTarget::default(),
         }
     }
 }

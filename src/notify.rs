@@ -138,6 +138,7 @@ mod tests {
             kind,
             adhan: t,
             adhan_display: format!("{hh:02}:{mm:02}"),
+            iqama: NaiveTime::from_hms_opt(hh, mm + 10, 0),
             iqama_display: Some(format!("{hh:02}:{}", mm + 10)),
         }
     }

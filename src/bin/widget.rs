@@ -26,12 +26,14 @@ use std::thread;
 use std::time::Instant;
 
 use chrono::Datelike;
-use mawaqit_widget::config::{self, AppConfig, CacheData, MosqueSelection, NotificationPrefs};
+use mawaqit_widget::config::{
+    self, AppConfig, CacheData, CountdownTarget, MosqueSelection, NotificationPrefs,
+};
 use mawaqit_widget::mawaqit::{IqamaTimes, MawaqitClient, MosqueHit, PrayerTimes};
 use mawaqit_widget::notify;
 use mawaqit_widget::schedule::{
     build_day_schedule, format_countdown, format_hhmm, next_prayer_with_tomorrow, now_local,
-    today_local, DaySchedule, PrayerKind, PrayerSlot,
+    today_local, DaySchedule, PrayerSlot,
 };
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
@@ -110,6 +112,8 @@ const IDC_N_AUTOSTART: i32 = 3112;
 const IDC_N_SAVE: i32 = 3113;
 const IDC_N_CANCEL: i32 = 3114;
 const IDC_N_UPDATE: i32 = 3115;
+const IDC_N_COUNT_ADHAN: i32 = 3116;
+const IDC_N_COUNT_IQAMA: i32 = 3117;
 const IDC_EDIT: i32 = 2001;
 const IDC_LIST: i32 = 2002;
 const IDC_SEARCH: i32 = 2003;
@@ -158,6 +162,7 @@ struct UiState {
     muted: String,
     next_name: String,
     next_hhmm: String,
+    next_is_iqama: bool,
     mosque_label: String,
     slots: Vec<PrayerSlot>,
     status: String,
@@ -183,6 +188,7 @@ impl Default for UiState {
             muted: String::from("loading"),
             next_name: String::new(),
             next_hhmm: String::new(),
+            next_is_iqama: false,
             mosque_label: String::new(),
             slots: Vec::new(),
             status: String::new(),
@@ -783,6 +789,37 @@ unsafe fn add_checkbox(parent: HWND, hinst: HINSTANCE, id: i32, text: &str, x: i
     );
 }
 
+unsafe fn add_radio(
+    parent: HWND,
+    hinst: HINSTANCE,
+    id: i32,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    group: bool,
+) {
+    let title = wide_z(text);
+    let mut style = WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_AUTORADIOBUTTON as u32;
+    if group {
+        style |= WS_GROUP.0;
+    }
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(title.as_ptr()),
+        WINDOW_STYLE(style),
+        x,
+        y,
+        w,
+        22,
+        parent,
+        HMENU(id as isize as *mut _),
+        hinst,
+        None,
+    );
+}
+
 unsafe fn set_check(parent: HWND, id: i32, on: bool) {
     let _ = CheckDlgButton(
         parent,
@@ -817,7 +854,7 @@ unsafe fn open_prefs(first_run: bool) {
         200,
         160,
         440,
-        520,
+        590,
         None,
         None,
         hinst,
@@ -944,7 +981,41 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         None,
     );
 
-    add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 340, 380);
+    let count_l = wide_z("Bar countdown shows:");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(count_l.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        336,
+        380,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    let countdown = STATE.with(|s| s.borrow().config.countdown);
+    add_radio(
+        hwnd,
+        hinst,
+        IDC_N_COUNT_ADHAN,
+        "Adhan (prayer time) — default",
+        20,
+        358,
+        380,
+        true,
+    );
+    add_radio(hwnd, hinst, IDC_N_COUNT_IQAMA, "Iqama", 20, 382, 380, false);
+    set_check(
+        hwnd,
+        IDC_N_COUNT_ADHAN,
+        !countdown.is_iqama(),
+    );
+    set_check(hwnd, IDC_N_COUNT_IQAMA, countdown.is_iqama());
+
+    add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 416, 380);
     set_check(hwnd, IDC_N_AUTOSTART, autostart);
 
     let upd = wide_z("Check for updates…");
@@ -954,7 +1025,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(upd.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
         20,
-        380,
+        450,
         180,
         28,
         hwnd,
@@ -970,7 +1041,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(save.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_DEFPUSHBUTTON as u32),
         220,
-        420,
+        490,
         90,
         32,
         hwnd,
@@ -985,7 +1056,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(cancel.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
         320,
-        420,
+        490,
         90,
         32,
         hwnd,
@@ -1023,6 +1094,11 @@ unsafe fn prefs_save(hwnd: HWND) -> bool {
     let mut cfg = STATE.with(|s| s.borrow().config.clone());
     cfg.notifications = prefs;
     cfg.start_with_windows = autostart;
+    cfg.countdown = if is_checked(hwnd, IDC_N_COUNT_IQAMA) {
+        CountdownTarget::Iqama
+    } else {
+        CountdownTarget::Adhan
+    };
     if let Err(e) = config::save_config(&cfg) {
         let msg = wide_z(&format!("Could not save: {e}"));
         let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONERROR);
@@ -1030,6 +1106,15 @@ unsafe fn prefs_save(hwnd: HWND) -> bool {
     }
     let _ = mawaqit_widget::autostart::set_enabled(autostart);
     STATE.with(|s| s.borrow_mut().config = cfg);
+    refresh_chip();
+    let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
+    if hwnd_ok(bar) {
+        let _ = InvalidateRect(bar, None, true);
+        let fly = hwnd_from(FLYOUT_HWND.load(Ordering::SeqCst));
+        if hwnd_ok(fly) {
+            let _ = InvalidateRect(fly, None, true);
+        }
+    }
     true
 }
 
@@ -1467,6 +1552,7 @@ fn refresh_chip() {
         if st.config.mosque.is_none() {
             st.next_name.clear();
             st.next_hhmm.clear();
+            st.next_is_iqama = false;
             st.chip = String::from("No mosque configured");
             st.muted = String::from("tray → Change mosque…");
             return;
@@ -1475,22 +1561,26 @@ fn refresh_chip() {
             st.chip = String::from("Loading times…");
             return;
         };
-        let fajr = schedule
-            .slots
-            .iter()
-            .find(|s| s.kind == PrayerKind::Fajr)
-            .map(|s| s.adhan);
         let now = now_local();
-        if let Some(next) = next_prayer_with_tomorrow(&schedule, fajr, now) {
+        if let Some(next) = next_prayer_with_tomorrow(&schedule, now, st.config.countdown) {
             let hhmm = format_hhmm(next.at.time());
             let name = next.kind.label();
             st.next_name = name.to_string();
             st.next_hhmm = hhmm.clone();
-            st.chip = format!(
-                "Next  {name}  {hhmm}   ·   {}",
-                format_countdown(next.remaining)
-            );
+            st.next_is_iqama = next.to_iqama;
+            st.chip = if next.to_iqama {
+                format!(
+                    "Next  {name} iqama  {hhmm}   ·   {}",
+                    format_countdown(next.remaining)
+                )
+            } else {
+                format!(
+                    "Next  {name}  {hhmm}   ·   {}",
+                    format_countdown(next.remaining)
+                )
+            };
         } else {
+            st.next_is_iqama = false;
             st.chip = String::from("Schedule ready");
         }
         if !st.mosque_label.is_empty() {
@@ -2287,9 +2377,11 @@ unsafe fn paint_bar(hwnd: HWND) {
     let _ = EndPaint(hwnd, &ps);
 }
 
-fn flyout_title(next_name: &str, next_hhmm: &str) -> String {
+fn flyout_title(next_name: &str, next_hhmm: &str, iqama: bool) -> String {
     if next_name.is_empty() {
         String::from("Mawaqit")
+    } else if iqama {
+        format!("Next: {next_name} iqama  {next_hhmm}")
     } else {
         format!("Next: {next_name}  {next_hhmm}")
     }
@@ -2319,11 +2411,12 @@ unsafe fn text_width(hdc: HDC, text: &str) -> i32 {
 }
 
 unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
-    let (next_name, next_hhmm, mosque, slots, status) = STATE.with(|s| {
+    let (next_name, next_hhmm, next_is_iqama, mosque, slots, status) = STATE.with(|s| {
         let st = s.borrow();
         (
             st.next_name.clone(),
             st.next_hhmm.clone(),
+            st.next_is_iqama,
             st.mosque_label.clone(),
             st.slots.clone(),
             st.status.clone(),
@@ -2335,7 +2428,7 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
     let font = create_ui_font(dpi_u);
     let old = SelectObject(hdc, font);
 
-    let title = flyout_title(&next_name, &next_hhmm);
+    let title = flyout_title(&next_name, &next_hhmm, next_is_iqama);
     let sub = if mosque.is_empty() {
         status.clone()
     } else {
@@ -2383,12 +2476,13 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
 }
 
 unsafe fn paint_flyout(hwnd: HWND) {
-    let (dark, next_name, next_hhmm, mosque, slots, status) = STATE.with(|s| {
+    let (dark, next_name, next_hhmm, next_is_iqama, mosque, slots, status) = STATE.with(|s| {
         let st = s.borrow();
         (
             st.dark,
             st.next_name.clone(),
             st.next_hhmm.clone(),
+            st.next_is_iqama,
             st.mosque_label.clone(),
             st.slots.clone(),
             st.status.clone(),
@@ -2426,7 +2520,7 @@ unsafe fn paint_flyout(hwnd: HWND) {
     let flags = DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER | DT_END_ELLIPSIS;
 
     let _ = SetTextColor(hdc, COLORREF(fg));
-    let title = flyout_title(&next_name, &next_hhmm);
+    let title = flyout_title(&next_name, &next_hhmm, next_is_iqama);
     let mut title_w = wide(&title);
     let mut title_rc = RECT {
         left: pad,
