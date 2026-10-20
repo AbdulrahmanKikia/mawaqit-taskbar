@@ -146,9 +146,35 @@ impl MawaqitClient {
         month: u32,
         day: u32,
     ) -> Result<IqamaTimes, Error> {
-        let month_rows = self.calendar_iqama_month(masjid_id, month)?;
-        let idx = day.saturating_sub(1) as usize;
-        Ok(month_rows.get(idx).cloned().unwrap_or_default())
+        // Prefer local API calendar; fall back to public page `iqamaCalendar`
+        // (many mosques such as ICQ only expose iqama there).
+        match self.calendar_iqama_month(masjid_id, month) {
+            Ok(month_rows) => {
+                let idx = day.saturating_sub(1) as usize;
+                let from_api = month_rows.get(idx).cloned().unwrap_or_default();
+                if iqama_has_values(&from_api) {
+                    return Ok(from_api);
+                }
+                // Empty API row — try the public page.
+                self.iqama_from_page(masjid_id, month, day)
+                    .or(Ok(from_api))
+            }
+            Err(_) => self.iqama_from_page(masjid_id, month, day),
+        }
+    }
+
+    fn iqama_from_page(
+        &self,
+        masjid_id: &str,
+        month: u32,
+        day: u32,
+    ) -> Result<IqamaTimes, Error> {
+        let conf = self.fetch_conf_data(masjid_id)?;
+        iqama_from_conf(&conf, month, day).ok_or_else(|| {
+            Error::msg(format!(
+                "No iqama calendar for “{masjid_id}” on {month}/{day}"
+            ))
+        })
     }
 
     /// Resolve a mosque from URL/slug by loading its public page `confData`.
@@ -438,19 +464,86 @@ fn times_from_conf(conf: &Value) -> Option<PrayerTimes> {
     if times.len() < 5 {
         return None;
     }
-    let get = |i: usize| times.get(i)?.as_str().map(|s| s.to_string());
+    let get = |i: usize| json_time_string(times.get(i)?);
     Some(PrayerTimes {
         fajr: get(0)?,
         sunrise: conf
             .get("shuruq")
-            .and_then(|v| v.as_str())
-            .unwrap_or("00:00")
-            .to_string(),
+            .and_then(json_time_string)
+            .unwrap_or_else(|| "00:00".into()),
         dohr: get(1)?,
         asr: get(2)?,
         maghreb: get(3)?,
         icha: get(4)?,
     })
+}
+
+fn iqama_has_values(iqama: &IqamaTimes) -> bool {
+    [&iqama.fajr, &iqama.dohr, &iqama.asr, &iqama.maghreb, &iqama.icha]
+        .iter()
+        .any(|s| !s.trim().is_empty())
+}
+
+/// Read today's iqama from public page `confData`.
+///
+/// Prefers `iqamaCalendar[month-1][day]` (5 values: fajr, dohr, asr, maghrib, isha).
+/// Falls back to a fixed `iqama` offset/time array when present.
+fn iqama_from_conf(conf: &Value, month: u32, day: u32) -> Option<IqamaTimes> {
+    if let Some(cal) = conf.get("iqamaCalendar").and_then(|v| v.as_array()) {
+        let month_idx = month.saturating_sub(1) as usize;
+        if let Some(month_obj) = cal.get(month_idx) {
+            let day_key = day.to_string();
+            if let Some(row) = month_obj.get(&day_key).and_then(|v| v.as_array()) {
+                if let Some(iq) = iqama_from_row(row) {
+                    return Some(iq);
+                }
+            }
+        }
+    }
+
+    if let Some(row) = conf.get("iqama").and_then(|v| v.as_array()) {
+        return iqama_from_row(row);
+    }
+
+    None
+}
+
+fn iqama_from_row(row: &[Value]) -> Option<IqamaTimes> {
+    if row.len() < 5 {
+        return None;
+    }
+    let get = |i: usize| {
+        row.get(i)
+            .and_then(json_time_string)
+            .unwrap_or_default()
+    };
+    let iq = IqamaTimes {
+        fajr: get(0),
+        dohr: get(1),
+        asr: get(2),
+        maghreb: get(3),
+        icha: get(4),
+    };
+    if iqama_has_values(&iq) {
+        Some(iq)
+    } else {
+        None
+    }
+}
+
+fn json_time_string(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        }
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 fn extract_conf_data(html: &str) -> Option<Value> {
@@ -723,6 +816,37 @@ mod tests {
     #[test]
     fn slugify_basic() {
         assert_eq!(slugify("Grande Mosquée de Paris"), "grande-mosquee-de-paris");
+    }
+
+    #[test]
+    fn iqama_from_conf_calendar() {
+        let conf = serde_json::json!({
+            "iqamaCalendar": [
+                {}, {}, {}, {}, {}, {}, {}, {}, {},
+                {
+                    "19": ["06:30", "13:30", "16:45", "+2", "19:45"]
+                },
+                {}, {}
+            ]
+        });
+        let iq = iqama_from_conf(&conf, 10, 19).unwrap();
+        assert_eq!(iq.fajr, "06:30");
+        assert_eq!(iq.dohr, "13:30");
+        assert_eq!(iq.asr, "16:45");
+        assert_eq!(iq.maghreb, "+2");
+        assert_eq!(iq.icha, "19:45");
+    }
+
+    #[test]
+    #[ignore = "network"]
+    fn live_icq_iqama() {
+        use chrono::Datelike;
+        let client = MawaqitClient::new("http://127.0.0.1:9").unwrap();
+        let now = chrono::Local::now().date_naive();
+        let iq = client
+            .iqama_for_day("icq", now.month(), now.day())
+            .unwrap();
+        assert!(iqama_has_values(&iq), "expected iqama from ICQ page");
     }
 
     #[test]

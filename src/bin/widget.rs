@@ -35,9 +35,10 @@ use windows::Win32::Foundation::{
     WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, GetStockObject, InvalidateRect,
-    SelectObject, SetBkMode, SetTextColor, TextOutW, UpdateWindow, DEFAULT_GUI_FONT, PAINTSTRUCT,
-    TRANSPARENT,
+    BeginPaint, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC,
+    GetStockObject, GetTextExtentPoint32W, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
+    SetTextColor, TextOutW, UpdateWindow, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT,
+    DT_SINGLELINE, DT_VCENTER, DEFAULT_GUI_FONT, HDC, PAINTSTRUCT, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{
@@ -45,7 +46,7 @@ use windows::Win32::System::Registry::{
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
-    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, SHAppBarMessage, ABE_BOTTOM, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
@@ -58,8 +59,12 @@ const BAR_CLASS: PCWSTR = w!("MawaqitShellWidget");
 const FLYOUT_CLASS: PCWSTR = w!("MawaqitShellFlyout");
 const PICKER_CLASS: PCWSTR = w!("MawaqitMosquePicker");
 const BAR_H: i32 = 40;
-const FLYOUT_W: i32 = 280;
-const FLYOUT_H: i32 = 260;
+/// Minimum flyout size; actual size is measured from content + DPI.
+const FLYOUT_W_MIN: i32 = 320;
+const FLYOUT_H_MIN: i32 = 240;
+const FLYOUT_PAD: i32 = 16;
+const FLYOUT_ROW_H: i32 = 26;
+const FLYOUT_HINT: &str = "Click to close · tray for menu";
 const PICKER_W: i32 = 420;
 const PICKER_H: i32 = 460;
 const WM_APPBAR: u32 = WM_USER + 64;
@@ -294,8 +299,8 @@ unsafe fn create_flyout(hinst: HINSTANCE) -> HWND {
         WS_POPUP,
         0,
         0,
-        FLYOUT_W,
-        FLYOUT_H,
+        FLYOUT_W_MIN,
+        FLYOUT_H_MIN,
         None,
         None,
         hinst,
@@ -535,17 +540,19 @@ unsafe fn toggle_flyout() {
         return;
     }
     if expanded {
+        let (fw, fh) = measure_flyout_size(flyout);
         let mut br = RECT::default();
         let _ = GetWindowRect(bar, &mut br);
-        let x = br.left + 12;
-        let y = br.top - FLYOUT_H - 6;
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let x = (br.left + 12).clamp(0, (screen_w - fw).max(0));
+        let y = br.top - fh - 6;
         let _ = SetWindowPos(
             flyout,
             HWND_TOPMOST,
             x,
             y.max(0),
-            FLYOUT_W,
-            FLYOUT_H,
+            fw,
+            fh,
             SWP_SHOWWINDOW | SWP_NOACTIVATE,
         );
         let _ = ShowWindow(flyout, SW_SHOWNOACTIVATE);
@@ -1265,6 +1272,99 @@ unsafe fn paint_bar(hwnd: HWND) {
     let _ = EndPaint(hwnd, &ps);
 }
 
+fn flyout_title(next_name: &str, next_hhmm: &str) -> String {
+    if next_name.is_empty() {
+        String::from("Mawaqit")
+    } else {
+        format!("Next: {next_name}  {next_hhmm}")
+    }
+}
+
+fn flyout_slot_left(slot: &PrayerSlot, next_name: &str) -> String {
+    let mark = if slot.kind.label() == next_name {
+        ">"
+    } else {
+        " "
+    };
+    format!("{mark}  {}", slot.kind.label())
+}
+
+fn flyout_slot_right(slot: &PrayerSlot) -> String {
+    match slot.iqama_display.as_deref() {
+        Some(iq) if !iq.is_empty() => format!("{} · iqama {iq}", slot.adhan_display),
+        _ => slot.adhan_display.clone(),
+    }
+}
+
+unsafe fn text_width(hdc: HDC, text: &str) -> i32 {
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let mut size = Default::default();
+    let _ = GetTextExtentPoint32W(hdc, &wide, &mut size);
+    size.cx
+}
+
+unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
+    let (next_name, next_hhmm, mosque, slots, status) = STATE.with(|s| {
+        let st = s.borrow();
+        (
+            st.next_name.clone(),
+            st.next_hhmm.clone(),
+            st.mosque_label.clone(),
+            st.slots.clone(),
+            st.status.clone(),
+        )
+    });
+
+    let hdc = GetDC(hwnd);
+    let font = GetStockObject(DEFAULT_GUI_FONT);
+    let old = SelectObject(hdc, font);
+
+    let title = flyout_title(&next_name, &next_hhmm);
+    let sub = if mosque.is_empty() {
+        status.clone()
+    } else {
+        mosque
+    };
+
+    let mut content_w = text_width(hdc, &title)
+        .max(text_width(hdc, FLYOUT_HINT))
+        .max(text_width(hdc, &sub).min(420));
+
+    if slots.is_empty() {
+        let msg = if status.is_empty() {
+            "No times yet"
+        } else {
+            status.as_str()
+        };
+        content_w = content_w.max(text_width(hdc, msg));
+    } else {
+        for slot in &slots {
+            let row_w = text_width(hdc, &flyout_slot_left(slot, &next_name))
+                + 24
+                + text_width(hdc, &flyout_slot_right(slot));
+            content_w = content_w.max(row_w);
+        }
+    }
+
+    let _ = SelectObject(hdc, old);
+    let _ = ReleaseDC(hwnd, hdc);
+
+    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let pad = FLYOUT_PAD * dpi / 96;
+    let row_h = FLYOUT_ROW_H * dpi / 96;
+    let header_h = 64 * dpi / 96;
+    let footer_h = 36 * dpi / 96;
+    let rows = if slots.is_empty() { 1 } else { slots.len() as i32 };
+
+    let width = (content_w + pad * 2)
+        .max(FLYOUT_W_MIN * dpi / 96)
+        .min(520 * dpi / 96);
+    let height = (header_h + rows * row_h + footer_h)
+        .max(FLYOUT_H_MIN * dpi / 96);
+
+    (width, height)
+}
+
 unsafe fn paint_flyout(hwnd: HWND) {
     let (dark, next_name, next_hhmm, mosque, slots, status) = STATE.with(|s| {
         let st = s.borrow();
@@ -1302,14 +1402,21 @@ unsafe fn paint_flyout(hwnd: HWND) {
     let font = GetStockObject(DEFAULT_GUI_FONT);
     let old = SelectObject(hdc, font);
 
+    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let pad = FLYOUT_PAD * dpi / 96;
+    let row_h = FLYOUT_ROW_H * dpi / 96;
+    let flags = DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER | DT_END_ELLIPSIS;
+
     let _ = SetTextColor(hdc, COLORREF(fg));
-    let title = if next_name.is_empty() {
-        String::from("Mawaqit")
-    } else {
-        format!("Next: {next_name}  {next_hhmm}")
+    let title = flyout_title(&next_name, &next_hhmm);
+    let mut title_w = wide(&title);
+    let mut title_rc = RECT {
+        left: pad,
+        top: 10 * dpi / 96,
+        right: rc.right - pad,
+        bottom: 34 * dpi / 96,
     };
-    let title_w: Vec<u16> = title.encode_utf16().collect();
-    let _ = TextOutW(hdc, 16, 14, &title_w);
+    let _ = DrawTextW(hdc, &mut title_w, &mut title_rc, DT_LEFT | flags);
 
     let _ = SetTextColor(hdc, COLORREF(dim));
     let sub = if mosque.is_empty() {
@@ -1317,46 +1424,77 @@ unsafe fn paint_flyout(hwnd: HWND) {
     } else {
         mosque
     };
-    let sub_w: Vec<u16> = sub.encode_utf16().collect();
-    let _ = TextOutW(hdc, 16, 36, &sub_w);
+    let mut sub_w = wide(&sub);
+    let mut sub_rc = RECT {
+        left: pad,
+        top: 34 * dpi / 96,
+        right: rc.right - pad,
+        bottom: 56 * dpi / 96,
+    };
+    let _ = DrawTextW(hdc, &mut sub_w, &mut sub_rc, DT_LEFT | flags);
 
+    let body_top = 64 * dpi / 96;
     if slots.is_empty() {
         let _ = SetTextColor(hdc, COLORREF(dim));
-        let msg: Vec<u16> = if status.is_empty() {
-            "No times yet".encode_utf16().collect()
+        let msg = if status.is_empty() {
+            "No times yet"
         } else {
-            status.encode_utf16().collect()
+            status.as_str()
         };
-        let _ = TextOutW(hdc, 16, 72, &msg);
+        let mut msg_w = wide(msg);
+        let mut msg_rc = RECT {
+            left: pad,
+            top: body_top,
+            right: rc.right - pad,
+            bottom: body_top + row_h,
+        };
+        let _ = DrawTextW(hdc, &mut msg_w, &mut msg_rc, DT_LEFT | flags);
     } else {
         for (i, slot) in slots.iter().enumerate() {
             let is_next = slot.kind.label() == next_name.as_str();
             let _ = SetTextColor(hdc, COLORREF(if is_next { accent } else { fg }));
-            let mark = if is_next { ">" } else { " " };
-            let iqama = slot
-                .iqama_display
-                .as_deref()
-                .map(|i| format!("  iqama {i}"))
-                .unwrap_or_default();
-            let line: Vec<u16> = format!(
-                "{mark}  {:<8}  {}{iqama}",
-                slot.kind.label(),
-                slot.adhan_display
-            )
-            .encode_utf16()
-            .collect();
-            let _ = TextOutW(hdc, 16, 64 + (i as i32) * 24, &line);
+            let y = body_top + (i as i32) * row_h;
+            let left = flyout_slot_left(slot, &next_name);
+            let right = flyout_slot_right(slot);
+            let mut left_w = wide(&left);
+            let mut right_w = wide(&right);
+            let mut left_rc = RECT {
+                left: pad,
+                top: y,
+                right: rc.right - pad - text_width(hdc, &right) - 12,
+                bottom: y + row_h,
+            };
+            let mut right_rc = RECT {
+                left: left_rc.right + 4,
+                top: y,
+                right: rc.right - pad,
+                bottom: y + row_h,
+            };
+            if left_rc.right < left_rc.left + 40 {
+                left_rc.right = (rc.right - pad) / 2;
+                right_rc.left = left_rc.right + 4;
+            }
+            let _ = DrawTextW(hdc, &mut left_w, &mut left_rc, DT_LEFT | flags);
+            let _ = DrawTextW(hdc, &mut right_w, &mut right_rc, DT_RIGHT | flags);
         }
     }
 
     let _ = SetTextColor(hdc, COLORREF(dim));
-    let hint: Vec<u16> = "Click to close · tray → Refresh / Hide / Quit"
-        .encode_utf16()
-        .collect();
-    let _ = TextOutW(hdc, 16, rc.bottom - 28, &hint);
+    let mut hint_w = wide(FLYOUT_HINT);
+    let mut hint_rc = RECT {
+        left: pad,
+        top: rc.bottom - 30 * dpi / 96,
+        right: rc.right - pad,
+        bottom: rc.bottom - 8 * dpi / 96,
+    };
+    let _ = DrawTextW(hdc, &mut hint_w, &mut hint_rc, DT_LEFT | flags);
 
     let _ = SelectObject(hdc, old);
     let _ = EndPaint(hwnd, &ps);
+}
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
 }
 
 fn theme(dark: bool) -> (u32, u32, u32, u32) {
