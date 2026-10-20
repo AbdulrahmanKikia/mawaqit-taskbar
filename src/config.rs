@@ -17,10 +17,77 @@ pub struct AppConfig {
     /// Register/unregister HKCU Run key on launch.
     #[serde(default = "default_true")]
     pub start_with_windows: bool,
+    #[serde(default)]
+    pub notifications: NotificationPrefs,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_before_mins() -> u32 {
+    10
+}
+
+/// User-controlled prayer alerts (tray balloons).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPrefs {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub at_adhan: bool,
+    #[serde(default)]
+    pub at_iqama: bool,
+    /// Minutes before adhan. `0` turns the reminder off.
+    #[serde(default = "default_before_mins")]
+    pub minutes_before: u32,
+    #[serde(default = "default_true")]
+    pub fajr: bool,
+    #[serde(default = "default_true")]
+    pub dhuhr: bool,
+    #[serde(default = "default_true")]
+    pub asr: bool,
+    #[serde(default = "default_true")]
+    pub maghrib: bool,
+    #[serde(default = "default_true")]
+    pub isha: bool,
+    #[serde(default)]
+    pub shuruq: bool,
+    /// True after the first-run prefs screen (or a later save).
+    #[serde(default)]
+    pub setup_completed: bool,
+}
+
+impl Default for NotificationPrefs {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            at_adhan: true,
+            at_iqama: false,
+            minutes_before: 10,
+            fajr: true,
+            dhuhr: true,
+            asr: true,
+            maghrib: true,
+            isha: true,
+            shuruq: false,
+            setup_completed: false,
+        }
+    }
+}
+
+impl NotificationPrefs {
+    pub fn prayer_enabled(&self, name: &str) -> bool {
+        match name {
+            "Fajr" => self.fajr,
+            "Shuruq" => self.shuruq,
+            "Dhuhr" => self.dhuhr,
+            "Asr" => self.asr,
+            "Maghrib" => self.maghrib,
+            "Isha" => self.isha,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +102,7 @@ impl Default for AppConfig {
             api_base_url: DEFAULT_API_BASE.to_string(),
             mosque: None,
             start_with_windows: true,
+            notifications: NotificationPrefs::default(),
         }
     }
 }

@@ -15,6 +15,7 @@
 #![windows_subsystem = "windows"]
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -23,8 +24,9 @@ use std::thread;
 use std::time::Instant;
 
 use chrono::Datelike;
-use mawaqit_widget::config::{self, AppConfig, CacheData, MosqueSelection};
+use mawaqit_widget::config::{self, AppConfig, CacheData, MosqueSelection, NotificationPrefs};
 use mawaqit_widget::mawaqit::{IqamaTimes, MawaqitClient, MosqueHit, PrayerTimes};
+use mawaqit_widget::notify;
 use mawaqit_widget::schedule::{
     build_day_schedule, format_countdown, format_hhmm, next_prayer_with_tomorrow, now_local,
     today_local, DaySchedule, PrayerKind, PrayerSlot,
@@ -35,16 +37,20 @@ use windows::Win32::Foundation::{
     WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC,
-    GetStockObject, GetTextExtentPoint32W, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
-    SetTextColor, TextOutW, UpdateWindow, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT,
-    DT_SINGLELINE, DT_VCENTER, DEFAULT_GUI_FONT, HDC, PAINTSTRUCT, TRANSPARENT,
+    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC,
+    GetSysColorBrush, GetTextExtentPoint32W, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
+    SetTextColor,
+    UpdateWindow, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
+    DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE,
+    FW_BOLD, HDC, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_CURRENT_USER, KEY_READ, REG_VALUE_TYPE,
 };
 use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::Graphics::Gdi::COLOR_3DFACE;
+use windows::Win32::UI::Controls::{CheckDlgButton, IsDlgButtonChecked, BST_CHECKED, BST_UNCHECKED};
 use windows::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
@@ -64,7 +70,8 @@ const FLYOUT_W_MIN: i32 = 320;
 const FLYOUT_H_MIN: i32 = 240;
 const FLYOUT_PAD: i32 = 16;
 const FLYOUT_ROW_H: i32 = 26;
-const FLYOUT_HINT: &str = "Click to close · tray for menu";
+const FLYOUT_HINT: &str = "Click elsewhere to close · tray for menu";
+const PREFS_CLASS: PCWSTR = w!("MawaqitPrefs");
 const PICKER_W: i32 = 420;
 const PICKER_H: i32 = 460;
 const WM_APPBAR: u32 = WM_USER + 64;
@@ -72,6 +79,7 @@ const WM_TRAY: u32 = WM_USER + 65;
 const WM_DATA: u32 = WM_USER + 66;
 const WM_SEARCH_DONE: u32 = WM_USER + 67;
 const WM_MOSQUE_PICKED: u32 = WM_USER + 68;
+const WM_CLICKAWAY: u32 = WM_USER + 69;
 const TIMER_TICK: usize = 1;
 const TIMER_REFRESH: usize = 2;
 const ID_TRAY: u32 = 1;
@@ -80,6 +88,21 @@ const IDM_HIDE: u16 = 1002;
 const IDM_QUIT: u16 = 1003;
 const IDM_REFRESH: u16 = 1004;
 const IDM_MOSQUE: u16 = 1005;
+const IDM_PREFS: u16 = 1006;
+const IDC_N_ENABLE: i32 = 3101;
+const IDC_N_FAJR: i32 = 3102;
+const IDC_N_DHUHR: i32 = 3103;
+const IDC_N_ASR: i32 = 3104;
+const IDC_N_MAGHRIB: i32 = 3105;
+const IDC_N_ISHA: i32 = 3106;
+const IDC_N_SHURUQ: i32 = 3107;
+const IDC_N_ADHAN: i32 = 3108;
+const IDC_N_IQAMA: i32 = 3109;
+const IDC_N_BEFORE: i32 = 3110;
+const IDC_N_MINUTES: i32 = 3111;
+const IDC_N_AUTOSTART: i32 = 3112;
+const IDC_N_SAVE: i32 = 3113;
+const IDC_N_CANCEL: i32 = 3114;
 const IDC_EDIT: i32 = 2001;
 const IDC_LIST: i32 = 2002;
 const IDC_SEARCH: i32 = 2003;
@@ -91,8 +114,11 @@ const REFRESH_EVERY_SECS: u64 = 45 * 60;
 static BAR_HWND: AtomicIsize = AtomicIsize::new(0);
 static FLYOUT_HWND: AtomicIsize = AtomicIsize::new(0);
 static PICKER_HWND: AtomicIsize = AtomicIsize::new(0);
+static PREFS_HWND: AtomicIsize = AtomicIsize::new(0);
+static MOUSE_HOOK: AtomicIsize = AtomicIsize::new(0);
 static FETCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static SEARCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static PREFS_FIRST_RUN: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     static STATE: RefCell<UiState> = RefCell::new(UiState::default());
@@ -118,6 +144,7 @@ struct UiState {
     last_fetch: Option<Instant>,
     picker_hits: Vec<MosqueHit>,
     hinst: HINSTANCE,
+    notified: HashSet<String>,
 }
 
 impl Default for UiState {
@@ -142,6 +169,7 @@ impl Default for UiState {
             last_fetch: None,
             picker_hits: Vec::new(),
             hinst: HINSTANCE::default(),
+            notified: HashSet::new(),
         }
     }
 }
@@ -271,6 +299,17 @@ unsafe fn register_classes(hinst: HINSTANCE, dark: bool) {
         ..Default::default()
     };
     let _ = RegisterClassW(&picker);
+
+    let prefs = WNDCLASSW {
+        style: CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(prefs_proc),
+        hInstance: hinst,
+        hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+        hbrBackground: GetSysColorBrush(COLOR_3DFACE),
+        lpszClassName: PREFS_CLASS,
+        ..Default::default()
+    };
+    let _ = RegisterClassW(&prefs);
 }
 
 unsafe fn create_bar(hinst: HINSTANCE) -> HWND {
@@ -293,7 +332,7 @@ unsafe fn create_bar(hinst: HINSTANCE) -> HWND {
 
 unsafe fn create_flyout(hinst: HINSTANCE) -> HWND {
     CreateWindowExW(
-        WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0),
+        WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0 | WS_EX_NOACTIVATE.0),
         FLYOUT_CLASS,
         w!("Mawaqit Flyout"),
         WS_POPUP,
@@ -557,7 +596,9 @@ unsafe fn toggle_flyout() {
         );
         let _ = ShowWindow(flyout, SW_SHOWNOACTIVATE);
         let _ = InvalidateRect(flyout, None, true);
+        install_clickaway_hook();
     } else {
+        uninstall_clickaway_hook();
         let _ = ShowWindow(flyout, SW_HIDE);
     }
     let _ = InvalidateRect(bar, None, false);
@@ -565,6 +606,7 @@ unsafe fn toggle_flyout() {
 
 unsafe fn hide_flyout() {
     STATE.with(|s| s.borrow_mut().expanded = false);
+    uninstall_clickaway_hook();
     let flyout = hwnd_from(FLYOUT_HWND.load(Ordering::SeqCst));
     if hwnd_ok(flyout) {
         let _ = ShowWindow(flyout, SW_HIDE);
@@ -573,6 +615,68 @@ unsafe fn hide_flyout() {
     if hwnd_ok(bar) {
         let _ = InvalidateRect(bar, None, false);
     }
+}
+
+fn pt_in_hwnd(hwnd: HWND, pt: POINT) -> bool {
+    if !hwnd_ok(hwnd) {
+        return false;
+    }
+    unsafe {
+        let mut rc = RECT::default();
+        if GetWindowRect(hwnd, &mut rc).is_err() {
+            return false;
+        }
+        pt.x >= rc.left && pt.x < rc.right && pt.y >= rc.top && pt.y < rc.bottom
+    }
+}
+
+unsafe fn install_clickaway_hook() {
+    if MOUSE_HOOK.load(Ordering::SeqCst) != 0 {
+        return;
+    }
+    let module = GetModuleHandleW(None).unwrap_or_default();
+    match SetWindowsHookExW(WH_MOUSE_LL, Some(clickaway_hook), module, 0) {
+        Ok(hook) => MOUSE_HOOK.store(hook.0 as isize, Ordering::SeqCst),
+        Err(_) => {}
+    }
+}
+
+unsafe fn uninstall_clickaway_hook() {
+    let raw = MOUSE_HOOK.swap(0, Ordering::SeqCst);
+    if raw != 0 {
+        let _ = UnhookWindowsHookEx(HHOOK(raw as *mut _));
+    }
+}
+
+unsafe extern "system" fn clickaway_hook(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if code >= 0 {
+        let msg = wparam.0 as u32;
+        if matches!(
+            msg,
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_NCLBUTTONDOWN | WM_NCRBUTTONDOWN
+        ) {
+            let info = *(lparam.0 as *const MSLLHOOKSTRUCT);
+            let flyout = hwnd_from(FLYOUT_HWND.load(Ordering::SeqCst));
+            let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
+            let prefs = hwnd_from(PREFS_HWND.load(Ordering::SeqCst));
+            if !pt_in_hwnd(flyout, info.pt)
+                && !pt_in_hwnd(bar, info.pt)
+                && !pt_in_hwnd(prefs, info.pt)
+            {
+                let _ = PostMessageW(bar, WM_CLICKAWAY, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+    CallNextHookEx(
+        HHOOK(MOUSE_HOOK.load(Ordering::SeqCst) as *mut _),
+        code,
+        wparam,
+        lparam,
+    )
 }
 
 unsafe fn show_tray_menu(hwnd: HWND) {
@@ -595,6 +699,7 @@ unsafe fn show_tray_menu(hwnd: HWND) {
     }
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_MOSQUE as usize, w!("Change mosque…"));
+    let _ = AppendMenuW(menu, MF_STRING, IDM_PREFS as usize, w!("Preferences…"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_REFRESH as usize, w!("Refresh times"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT as usize, w!("Quit"));
 
@@ -616,11 +721,332 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         IDM_SHOW => show_bar(true),
         IDM_HIDE => show_bar(false),
         IDM_MOSQUE => open_picker(),
+        IDM_PREFS => open_prefs(false),
         IDM_REFRESH => request_refresh(hwnd),
         IDM_QUIT => {
             PostQuitMessage(0);
         }
         _ => {}
+    }
+}
+
+fn wide_z(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+unsafe fn add_checkbox(parent: HWND, hinst: HINSTANCE, id: i32, text: &str, x: i32, y: i32, w: i32) {
+    let title = wide_z(text);
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(title.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_AUTOCHECKBOX as u32),
+        x,
+        y,
+        w,
+        22,
+        parent,
+        HMENU(id as isize as *mut _),
+        hinst,
+        None,
+    );
+}
+
+unsafe fn set_check(parent: HWND, id: i32, on: bool) {
+    let _ = CheckDlgButton(
+        parent,
+        id,
+        if on { BST_CHECKED } else { BST_UNCHECKED },
+    );
+}
+
+unsafe fn is_checked(parent: HWND, id: i32) -> bool {
+    IsDlgButtonChecked(parent, id) == BST_CHECKED.0 as u32
+}
+
+unsafe fn open_prefs(first_run: bool) {
+    hide_flyout();
+    let existing = hwnd_from(PREFS_HWND.load(Ordering::SeqCst));
+    if hwnd_ok(existing) {
+        let _ = ShowWindow(existing, SW_RESTORE);
+        let _ = SetForegroundWindow(existing);
+        return;
+    }
+    PREFS_FIRST_RUN.store(first_run, Ordering::SeqCst);
+    let hinst = STATE.with(|s| s.borrow().hinst);
+    let hwnd = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        PREFS_CLASS,
+        if first_run {
+            w!("Mawaqit — notification setup")
+        } else {
+            w!("Mawaqit — Preferences")
+        },
+        WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_VISIBLE.0 | WS_MINIMIZEBOX.0),
+        200,
+        160,
+        440,
+        520,
+        None,
+        None,
+        hinst,
+        None,
+    )
+    .unwrap_or_default();
+    if hwnd_ok(hwnd) {
+        PREFS_HWND.store(hwnd_raw(hwnd), Ordering::SeqCst);
+        let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+unsafe fn prefs_build_controls(hwnd: HWND) {
+    let hinst = STATE.with(|s| s.borrow().hinst);
+    let n = STATE.with(|s| s.borrow().config.notifications.clone());
+    let autostart = STATE.with(|s| s.borrow().config.start_with_windows);
+
+    let intro = if PREFS_FIRST_RUN.load(Ordering::SeqCst) {
+        "Choose how you want to be notified. You can change this later from the bar menu."
+    } else {
+        "Prayer notifications appear near the clock (system tray)."
+    };
+    let intro_w = wide_z(intro);
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(intro_w.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        16,
+        390,
+        40,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+
+    add_checkbox(hwnd, hinst, IDC_N_ENABLE, "Enable prayer notifications", 20, 62, 380);
+    set_check(hwnd, IDC_N_ENABLE, n.enabled);
+
+    let prayers = wide_z("Notify for:");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(prayers.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        96,
+        200,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    add_checkbox(hwnd, hinst, IDC_N_FAJR, "Fajr", 20, 120, 90);
+    add_checkbox(hwnd, hinst, IDC_N_DHUHR, "Dhuhr", 120, 120, 90);
+    add_checkbox(hwnd, hinst, IDC_N_ASR, "Asr", 220, 120, 90);
+    add_checkbox(hwnd, hinst, IDC_N_MAGHRIB, "Maghrib", 20, 148, 90);
+    add_checkbox(hwnd, hinst, IDC_N_ISHA, "Isha", 120, 148, 90);
+    add_checkbox(hwnd, hinst, IDC_N_SHURUQ, "Shuruq", 220, 148, 90);
+    set_check(hwnd, IDC_N_FAJR, n.fajr);
+    set_check(hwnd, IDC_N_DHUHR, n.dhuhr);
+    set_check(hwnd, IDC_N_ASR, n.asr);
+    set_check(hwnd, IDC_N_MAGHRIB, n.maghrib);
+    set_check(hwnd, IDC_N_ISHA, n.isha);
+    set_check(hwnd, IDC_N_SHURUQ, n.shuruq);
+
+    let when = wide_z("When:");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(when.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        186,
+        200,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    add_checkbox(hwnd, hinst, IDC_N_ADHAN, "At adhan (prayer time)", 20, 210, 380);
+    add_checkbox(hwnd, hinst, IDC_N_IQAMA, "At iqama", 20, 238, 380);
+    add_checkbox(hwnd, hinst, IDC_N_BEFORE, "Reminder before adhan", 20, 266, 240);
+    set_check(hwnd, IDC_N_ADHAN, n.at_adhan);
+    set_check(hwnd, IDC_N_IQAMA, n.at_iqama);
+    set_check(hwnd, IDC_N_BEFORE, n.minutes_before > 0);
+
+    let mins_l = wide_z("Minutes before:");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(mins_l.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        44,
+        298,
+        120,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    let mins = wide_z(&if n.minutes_before == 0 {
+        "10".into()
+    } else {
+        n.minutes_before.to_string()
+    });
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
+        w!("EDIT"),
+        PCWSTR(mins.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | ES_NUMBER as u32),
+        170,
+        294,
+        50,
+        24,
+        hwnd,
+        HMENU(IDC_N_MINUTES as isize as *mut _),
+        hinst,
+        None,
+    );
+
+    add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 340, 380);
+    set_check(hwnd, IDC_N_AUTOSTART, autostart);
+
+    let save = wide_z("Save");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(save.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_DEFPUSHBUTTON as u32),
+        220,
+        420,
+        90,
+        32,
+        hwnd,
+        HMENU(IDC_N_SAVE as isize as *mut _),
+        hinst,
+        None,
+    );
+    let cancel = wide_z("Cancel");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(cancel.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        320,
+        420,
+        90,
+        32,
+        hwnd,
+        HMENU(IDC_N_CANCEL as isize as *mut _),
+        hinst,
+        None,
+    );
+}
+
+unsafe fn prefs_save(hwnd: HWND) -> bool {
+    let mut minutes: u32 = 10;
+    if let Ok(edit) = GetDlgItem(hwnd, IDC_N_MINUTES) {
+        let mut buf = [0u16; 16];
+        let n = GetWindowTextW(edit, &mut buf);
+        let text = String::from_utf16_lossy(&buf[..n as usize]);
+        if let Ok(v) = text.trim().parse::<u32>() {
+            minutes = v.min(120);
+        }
+    }
+    let before_on = is_checked(hwnd, IDC_N_BEFORE);
+    let prefs = NotificationPrefs {
+        enabled: is_checked(hwnd, IDC_N_ENABLE),
+        at_adhan: is_checked(hwnd, IDC_N_ADHAN),
+        at_iqama: is_checked(hwnd, IDC_N_IQAMA),
+        minutes_before: if before_on { minutes.max(1) } else { 0 },
+        fajr: is_checked(hwnd, IDC_N_FAJR),
+        dhuhr: is_checked(hwnd, IDC_N_DHUHR),
+        asr: is_checked(hwnd, IDC_N_ASR),
+        maghrib: is_checked(hwnd, IDC_N_MAGHRIB),
+        isha: is_checked(hwnd, IDC_N_ISHA),
+        shuruq: is_checked(hwnd, IDC_N_SHURUQ),
+        setup_completed: true,
+    };
+    let autostart = is_checked(hwnd, IDC_N_AUTOSTART);
+    let mut cfg = STATE.with(|s| s.borrow().config.clone());
+    cfg.notifications = prefs;
+    cfg.start_with_windows = autostart;
+    if let Err(e) = config::save_config(&cfg) {
+        let msg = wide_z(&format!("Could not save: {e}"));
+        let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONERROR);
+        return false;
+    }
+    let _ = mawaqit_widget::autostart::set_enabled(autostart);
+    STATE.with(|s| s.borrow_mut().config = cfg);
+    true
+}
+
+unsafe fn prefs_mark_setup_done() {
+    let mut cfg = STATE.with(|s| s.borrow().config.clone());
+    if cfg.notifications.setup_completed {
+        return;
+    }
+    cfg.notifications.setup_completed = true;
+    let _ = config::save_config(&cfg);
+    STATE.with(|s| s.borrow_mut().config = cfg);
+}
+
+unsafe extern "system" fn prefs_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            prefs_build_controls(hwnd);
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let id = wparam.0 as u16 as i32;
+            match id {
+                IDC_N_SAVE => {
+                    if prefs_save(hwnd) {
+                        let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
+                        if hwnd_ok(bar) {
+                            tray_balloon(
+                                bar,
+                                "Preferences saved",
+                                "Prayer notifications will follow your settings.",
+                            );
+                        }
+                        let _ = DestroyWindow(hwnd);
+                    }
+                    LRESULT(0)
+                }
+                IDC_N_CANCEL => {
+                    if PREFS_FIRST_RUN.load(Ordering::SeqCst) {
+                        prefs_mark_setup_done();
+                    }
+                    let _ = DestroyWindow(hwnd);
+                    LRESULT(0)
+                }
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            }
+        }
+        WM_CLOSE => {
+            if PREFS_FIRST_RUN.load(Ordering::SeqCst) {
+                prefs_mark_setup_done();
+            }
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            PREFS_HWND.store(0, Ordering::SeqCst);
+            PREFS_FIRST_RUN.store(false, Ordering::SeqCst);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 
@@ -646,6 +1072,7 @@ unsafe extern "system" fn bar_proc(
         WM_TIMER if wparam.0 == TIMER_TICK => {
             let before = STATE.with(|s| s.borrow().chip.clone());
             refresh_chip();
+            maybe_notify(hwnd);
             let after = STATE.with(|s| s.borrow().chip.clone());
             if before != after {
                 let _ = InvalidateRect(hwnd, None, false);
@@ -701,7 +1128,15 @@ unsafe extern "system" fn bar_proc(
                     "Mosque saved",
                     "Prayer times will refresh for your selected mosque.",
                 );
+                let need_setup = STATE.with(|s| !s.borrow().config.notifications.setup_completed);
+                if need_setup {
+                    open_prefs(true);
+                }
             }
+            LRESULT(0)
+        }
+        WM_CLICKAWAY => {
+            hide_flyout();
             LRESULT(0)
         }
         WM_TRAY => {
@@ -741,6 +1176,7 @@ unsafe extern "system" fn bar_proc(
             let _ = KillTimer(hwnd, TIMER_TICK);
             let _ = KillTimer(hwnd, TIMER_REFRESH);
             hide_flyout();
+            uninstall_clickaway_hook();
             if STATE.with(|s| s.borrow().tray_added) {
                 remove_tray_icon(hwnd);
             }
@@ -916,6 +1352,49 @@ fn request_refresh(hwnd: HWND) {
             let _ = PostMessageW(hwnd_from(hwnd_raw), WM_DATA, WPARAM(0), LPARAM(0));
         }
     });
+}
+
+fn maybe_notify(hwnd: HWND) {
+    let (prefs, slots, date) = STATE.with(|s| {
+        let st = s.borrow();
+        let date = st
+            .schedule
+            .as_ref()
+            .map(|sch| sch.date)
+            .unwrap_or_else(today_local);
+        (
+            st.config.notifications.clone(),
+            st.slots.clone(),
+            date,
+        )
+    });
+    if slots.is_empty() {
+        return;
+    }
+    let today = date.to_string();
+    STATE.with(|s| {
+        s.borrow_mut()
+            .notified
+            .retain(|k| k.starts_with(&today));
+    });
+    let already = STATE.with(|s| s.borrow().notified.clone());
+    let alerts = notify::pending_alerts(date, &slots, now_local(), &prefs, &already);
+    if alerts.is_empty() {
+        return;
+    }
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        for a in &alerts {
+            st.notified.insert(a.key.clone());
+        }
+    });
+    unsafe {
+        for a in alerts {
+            tray_balloon(hwnd, &a.title, &a.body);
+            // One balloon at a time — later alerts in the same tick wait for next seconds.
+            break;
+        }
+    }
 }
 
 fn refresh_chip() {
@@ -1250,25 +1729,76 @@ unsafe fn paint_bar(hwnd: HWND) {
     let _ = DeleteObject(pip);
 
     let _ = SetBkMode(hdc, TRANSPARENT);
-    let font = GetStockObject(DEFAULT_GUI_FONT);
+    let dpi = GetDpiForWindow(hwnd).max(96);
+    let font = create_ui_font(dpi);
     let old = SelectObject(hdc, font);
-    let y = ((rc.bottom - rc.top).max(20) - 16) / 2;
+    let pad = 14 * dpi as i32 / 96;
+    let gap = 16 * dpi as i32 / 96;
+    let flags = DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER;
 
+    // Far-right mosque name: measure full width and right-align so it isn't clipped.
+    let name = muted.trim();
+    let name_w = if name.is_empty() {
+        0
+    } else {
+        text_width(hdc, name)
+    };
+    let name_left = if name_w > 0 {
+        (rc.right - pad - name_w).max(pad)
+    } else {
+        rc.right - pad
+    };
+
+    let brand_w = text_width(hdc, &brand);
+    let brand_right = pad + brand_w;
+    let chip_left = brand_right + gap;
+    let chip_right = if name_w > 0 {
+        (name_left - gap).max(chip_left + 40)
+    } else {
+        rc.right - pad
+    };
+
+    let mut brand_buf = wide(&brand);
+    let mut brand_rc = RECT {
+        left: pad,
+        top: 0,
+        right: brand_right + 2,
+        bottom: rc.bottom,
+    };
     let _ = SetTextColor(hdc, COLORREF(fg));
-    let brand_w: Vec<u16> = brand.encode_utf16().collect();
-    let _ = TextOutW(hdc, 14, y, &brand_w);
+    let _ = DrawTextW(hdc, &mut brand_buf, &mut brand_rc, DT_LEFT | flags);
 
-    let _ = SetTextColor(hdc, COLORREF(if expanded { accent } else { accent }));
-    let chip_w: Vec<u16> = chip.encode_utf16().collect();
-    let _ = TextOutW(hdc, 100, y, &chip_w);
+    if chip_right > chip_left {
+        let mut chip_buf = wide(&chip);
+        let mut chip_rc = RECT {
+            left: chip_left,
+            top: 0,
+            right: chip_right,
+            bottom: rc.bottom,
+        };
+        let _ = SetTextColor(hdc, COLORREF(if expanded { accent } else { accent }));
+        let _ = DrawTextW(
+            hdc,
+            &mut chip_buf,
+            &mut chip_rc,
+            DT_LEFT | flags | DT_END_ELLIPSIS,
+        );
+    }
 
-    if rc.right > 520 {
+    if name_w > 0 {
+        let mut name_buf = wide(name);
+        let mut name_rc = RECT {
+            left: name_left,
+            top: 0,
+            right: rc.right - pad,
+            bottom: rc.bottom,
+        };
         let _ = SetTextColor(hdc, COLORREF(dim));
-        let muted_w: Vec<u16> = muted.encode_utf16().collect();
-        let _ = TextOutW(hdc, rc.right - 180, y, &muted_w);
+        let _ = DrawTextW(hdc, &mut name_buf, &mut name_rc, DT_RIGHT | flags);
     }
 
     let _ = SelectObject(hdc, old);
+    let _ = DeleteObject(font);
     let _ = EndPaint(hwnd, &ps);
 }
 
@@ -1315,8 +1845,9 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
         )
     });
 
+    let dpi_u = GetDpiForWindow(hwnd).max(96);
     let hdc = GetDC(hwnd);
-    let font = GetStockObject(DEFAULT_GUI_FONT);
+    let font = create_ui_font(dpi_u);
     let old = SelectObject(hdc, font);
 
     let title = flyout_title(&next_name, &next_hhmm);
@@ -1328,7 +1859,7 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
 
     let mut content_w = text_width(hdc, &title)
         .max(text_width(hdc, FLYOUT_HINT))
-        .max(text_width(hdc, &sub).min(420));
+        .max(text_width(hdc, &sub).min(480));
 
     if slots.is_empty() {
         let msg = if status.is_empty() {
@@ -1347,9 +1878,10 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
     }
 
     let _ = SelectObject(hdc, old);
+    let _ = DeleteObject(font);
     let _ = ReleaseDC(hwnd, hdc);
 
-    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let dpi = dpi_u as i32;
     let pad = FLYOUT_PAD * dpi / 96;
     let row_h = FLYOUT_ROW_H * dpi / 96;
     let header_h = 64 * dpi / 96;
@@ -1399,10 +1931,11 @@ unsafe fn paint_flyout(hwnd: HWND) {
     let _ = DeleteObject(border);
 
     let _ = SetBkMode(hdc, TRANSPARENT);
-    let font = GetStockObject(DEFAULT_GUI_FONT);
+    let dpi_u = GetDpiForWindow(hwnd).max(96);
+    let font = create_ui_font(dpi_u);
     let old = SelectObject(hdc, font);
 
-    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let dpi = dpi_u as i32;
     let pad = FLYOUT_PAD * dpi / 96;
     let row_h = FLYOUT_ROW_H * dpi / 96;
     let flags = DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER | DT_END_ELLIPSIS;
@@ -1490,11 +2023,33 @@ unsafe fn paint_flyout(hwnd: HWND) {
     let _ = DrawTextW(hdc, &mut hint_w, &mut hint_rc, DT_LEFT | flags);
 
     let _ = SelectObject(hdc, old);
+    let _ = DeleteObject(font);
     let _ = EndPaint(hwnd, &ps);
 }
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()
+}
+
+/// Bold Segoe UI sized for the given window DPI.
+unsafe fn create_ui_font(dpi: u32) -> HFONT {
+    let height = -((13 * dpi as i32) / 96);
+    CreateFontW(
+        height,
+        0,
+        0,
+        0,
+        FW_BOLD.0 as i32,
+        0,
+        0,
+        0,
+        DEFAULT_CHARSET.0 as u32,
+        OUT_DEFAULT_PRECIS.0 as u32,
+        CLIP_DEFAULT_PRECIS.0 as u32,
+        CLEARTYPE_QUALITY.0 as u32,
+        DEFAULT_PITCH.0 as u32 | FF_DONTCARE.0 as u32,
+        w!("Segoe UI"),
+    )
 }
 
 fn theme(dark: bool) -> (u32, u32, u32, u32) {
