@@ -3,6 +3,7 @@
   const statusEl = document.getElementById('status');
   const listEl = document.getElementById('list');
   const useBtn = document.getElementById('useBtn');
+  const favBtn = document.getElementById('favBtn');
   const pickedLabel = document.getElementById('pickedLabel');
   const qEl = document.getElementById('q');
   let mosques = [];
@@ -65,14 +66,24 @@
     markers = [];
   }
 
-  function confirmSelection() {
+  function setActionsEnabled(on) {
+    useBtn.disabled = !on;
+    if (favBtn) favBtn.disabled = !on;
+  }
+
+  function confirmSelection(favorite) {
     if (!selected) return;
-    ipc({ type: 'select', slug: selected.slug, label: selected.label });
+    ipc({
+      type: 'select',
+      slug: selected.slug,
+      label: selected.label,
+      favorite: !!favorite,
+    });
   }
 
   function selectMosque(m, pan) {
     selected = m;
-    useBtn.disabled = !m;
+    setActionsEnabled(!!m);
     if (m) {
       pickedLabel.innerHTML = 'Selected: <strong></strong>';
       pickedLabel.querySelector('strong').textContent = displayName(m);
@@ -114,7 +125,7 @@
       btn.onclick = () => selectMosque(m, true);
       btn.ondblclick = () => {
         selectMosque(m, false);
-        confirmSelection();
+        confirmSelection(false);
       };
       listEl.appendChild(btn);
     });
@@ -143,7 +154,7 @@
       marker.on('click', () => selectMosque(m, false));
       marker.on('dblclick', () => {
         selectMosque(m, false);
-        confirmSelection();
+        confirmSelection(false);
       });
       markers.push(marker);
     });
@@ -153,7 +164,7 @@
     const keepSlug = selected && selected.slug;
     mosques = Array.isArray(list) ? list : [];
     selected = keepSlug ? mosques.find((m) => m.slug === keepSlug) || null : null;
-    useBtn.disabled = !selected;
+    setActionsEnabled(!!selected);
     if (selected) {
       pickedLabel.innerHTML = 'Selected: <strong></strong>';
       pickedLabel.querySelector('strong').textContent = displayName(selected);
@@ -255,7 +266,8 @@
         { enableHighAccuracy: false, timeout: 8000 }
       );
     };
-    useBtn.onclick = confirmSelection;
+    useBtn.onclick = () => confirmSelection(false);
+    if (favBtn) favBtn.onclick = () => confirmSelection(true);
 
     ipc({ type: 'ready' });
     setTimeout(() => {

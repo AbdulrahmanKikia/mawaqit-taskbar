@@ -26,6 +26,14 @@ use crate::config;
 use crate::mawaqit::{MawaqitClient, MosqueHit};
 use crate::webview2_rt;
 
+/// Result of picking a mosque on the map.
+#[derive(Debug, Clone)]
+pub struct MapPick {
+    pub slug: String,
+    pub label: String,
+    pub favorite: bool,
+}
+
 #[cfg(target_os = "windows")]
 fn init_com_sta() {
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
@@ -60,7 +68,12 @@ enum IpcMsg {
     #[serde(rename = "search")]
     Search { word: String },
     #[serde(rename = "select")]
-    Select { slug: String, label: String },
+    Select {
+        slug: String,
+        label: String,
+        #[serde(default)]
+        favorite: bool,
+    },
 }
 
 enum UserEvent {
@@ -71,7 +84,7 @@ enum UserEvent {
 ///
 /// Runs a nested GUI event loop on the calling thread — spawn a thread before calling.
 /// Returns `Err` if the window/WebView2 could not be created (caller should show a fallback UI).
-pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Result<(), String> {
+pub fn run(on_done: impl FnOnce(Option<MapPick>) + 'static) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     init_com_sta();
     webview2_rt::prepare();
@@ -185,13 +198,16 @@ pub fn run(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Result<(), Stri
                         ),
                         Err(e) => push_error(&webview, &e.to_string()),
                     },
-                    IpcMsg::Select { slug, label } => {
+                    IpcMsg::Select {
+                        slug,
+                        label,
+                        favorite,
+                    } => {
                         if let Some(cb) = callback.take() {
-                            cb(Some(MosqueHit {
+                            cb(Some(MapPick {
                                 slug,
                                 label,
-                                lat: None,
-                                lon: None,
+                                favorite,
                             }));
                         }
                         *control_flow = ControlFlow::Exit;
@@ -280,7 +296,7 @@ fn push_error(webview: &wry::WebView, message: &str) {
 }
 
 /// Opens the same map in the default browser when WebView2 cannot start.
-pub fn run_in_browser(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Result<(), String> {
+pub fn run_in_browser(on_done: impl FnOnce(Option<MapPick>) + 'static) -> Result<(), String> {
     use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{mpsc, Arc, Mutex};
@@ -298,7 +314,7 @@ pub fn run_in_browser(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Resu
         MawaqitClient::new("https://mawaqit.net")
             .map_err(|e| format!("Could not start HTTP client: {e}"))?,
     );
-    let (tx, rx) = mpsc::sync_channel::<Option<MosqueHit>>(1);
+    let (tx, rx) = mpsc::sync_channel::<Option<MapPick>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
     let stop = Arc::new(AtomicBool::new(false));
 
@@ -331,7 +347,7 @@ pub fn run_in_browser(on_done: impl FnOnce(Option<MosqueHit>) + 'static) -> Resu
         };
         let _ = MessageBoxW(
             HWND::default(),
-            w!("The mosque map opened in your browser.\n\nPick a mosque, click “Use selected mosque”, then click OK here."),
+            w!("The mosque map opened in your browser.\n\nPick a mosque, then click Use selected or Set as favorite. Click OK here when you’re done."),
             w!("Mawaqit map"),
             MB_OK | MB_ICONINFORMATION,
         );
@@ -362,7 +378,7 @@ fn hits_payload(hits: &[MosqueHit], message: &str, fit: bool) -> serde_json::Val
 fn handle_browser_ipc(
     client: &MawaqitClient,
     raw: &str,
-) -> (serde_json::Value, Option<Option<MosqueHit>>) {
+) -> (serde_json::Value, Option<Option<MapPick>>) {
     let msg: IpcMsg = match serde_json::from_str(raw) {
         Ok(m) => m,
         Err(_) => return (json!({ "error": "bad request" }), None),
@@ -396,13 +412,16 @@ fn handle_browser_ipc(
             ),
             Err(e) => (json!({ "error": e.to_string() }), None),
         },
-        IpcMsg::Select { slug, label } => (
+        IpcMsg::Select {
+            slug,
+            label,
+            favorite,
+        } => (
             json!({ "ok": "selected" }),
-            Some(Some(MosqueHit {
+            Some(Some(MapPick {
                 slug,
                 label,
-                lat: None,
-                lon: None,
+                favorite,
             })),
         ),
     }
@@ -411,7 +430,7 @@ fn handle_browser_ipc(
 fn handle_http(
     mut stream: std::net::TcpStream,
     client: &MawaqitClient,
-    tx: &std::sync::Mutex<Option<std::sync::mpsc::SyncSender<Option<MosqueHit>>>>,
+    tx: &std::sync::Mutex<Option<std::sync::mpsc::SyncSender<Option<MapPick>>>>,
     stop: &std::sync::atomic::AtomicBool,
 ) {
     use std::io::{Read, Write};
@@ -506,8 +525,8 @@ fn handle_http(
 }
 
 fn finish_browser_pick(
-    tx: &std::sync::Mutex<Option<std::sync::mpsc::SyncSender<Option<MosqueHit>>>>,
-    hit: Option<MosqueHit>,
+    tx: &std::sync::Mutex<Option<std::sync::mpsc::SyncSender<Option<MapPick>>>>,
+    hit: Option<MapPick>,
 ) {
     if let Ok(mut slot) = tx.lock() {
         if let Some(sender) = slot.take() {

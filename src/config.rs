@@ -22,7 +22,12 @@ pub struct AppConfig {
     /// What the taskbar countdown counts down to. Default: adhan.
     #[serde(default)]
     pub countdown: CountdownTarget,
+    /// Short list of mosques for the right-click Favorites submenu.
+    #[serde(default)]
+    pub favorites: Vec<MosqueSelection>,
 }
+
+pub const MAX_FAVORITES: usize = 5;
 
 /// What the bar countdown aims at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,7 +132,34 @@ impl Default for AppConfig {
             start_with_windows: true,
             notifications: NotificationPrefs::default(),
             countdown: CountdownTarget::default(),
+            favorites: Vec::new(),
         }
+    }
+}
+
+impl AppConfig {
+    pub fn is_favorite(&self, masjid_id: &str) -> bool {
+        self.favorites.iter().any(|f| f.masjid_id == masjid_id)
+    }
+
+    /// Add `sel` if it is new. No-op if already listed.
+    /// Returns `Err` when the list is already full.
+    pub fn add_favorite(&mut self, sel: MosqueSelection) -> Result<bool, &'static str> {
+        if sel.masjid_id.trim().is_empty() {
+            return Ok(false);
+        }
+        if self.is_favorite(&sel.masjid_id) {
+            return Ok(false);
+        }
+        if self.favorites.len() >= MAX_FAVORITES {
+            return Err("You can keep 5 favorites. Remove one in Preferences first.");
+        }
+        self.favorites.push(sel);
+        Ok(true)
+    }
+
+    pub fn remove_favorite(&mut self, masjid_id: &str) {
+        self.favorites.retain(|f| f.masjid_id != masjid_id);
     }
 }
 
@@ -218,4 +250,43 @@ pub fn save_cache(cache: &CacheData) -> Result<(), Error> {
     let text = serde_json::to_string_pretty(cache)?;
     fs::write(path, text)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mos(id: &str) -> MosqueSelection {
+        MosqueSelection {
+            masjid_id: id.to_string(),
+            display_name: id.to_string(),
+        }
+    }
+
+    #[test]
+    fn add_favorite_dedupes_and_caps_at_five() {
+        let mut cfg = AppConfig::default();
+        assert!(cfg.add_favorite(mos("a")).unwrap());
+        assert!(!cfg.add_favorite(mos("a")).unwrap());
+        for id in ["b", "c", "d", "e"] {
+            assert!(cfg.add_favorite(mos(id)).unwrap());
+        }
+        assert_eq!(cfg.favorites.len(), 5);
+        assert!(cfg.add_favorite(mos("f")).is_err());
+        cfg.remove_favorite("c");
+        assert!(!cfg.is_favorite("c"));
+        assert!(cfg.add_favorite(mos("f")).unwrap());
+        assert_eq!(cfg.favorites.len(), 5);
+    }
+
+    #[test]
+    fn missing_favorites_field_defaults_empty() {
+        let text = r#"
+api_base_url = "https://mawaqit.net/api/2.0"
+start_with_windows = true
+"#;
+        let cfg: AppConfig = toml::from_str(text).unwrap();
+        assert!(cfg.favorites.is_empty());
+        assert!(cfg.mosque.is_none());
+    }
 }

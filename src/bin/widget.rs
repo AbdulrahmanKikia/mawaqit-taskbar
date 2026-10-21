@@ -16,7 +16,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::mem::size_of;
+use std::mem::{size_of, size_of_val};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -27,9 +27,10 @@ use std::time::Instant;
 
 use chrono::Datelike;
 use mawaqit_widget::config::{
-    self, AppConfig, CacheData, CountdownTarget, MosqueSelection, NotificationPrefs,
+    self, AppConfig, CacheData, CountdownTarget, MosqueSelection, NotificationPrefs, MAX_FAVORITES,
 };
-use mawaqit_widget::mawaqit::{IqamaTimes, MawaqitClient, MosqueHit, PrayerTimes};
+use mawaqit_widget::map_picker::MapPick;
+use mawaqit_widget::mawaqit::{IqamaTimes, MawaqitClient, PrayerTimes};
 use mawaqit_widget::notify;
 use mawaqit_widget::schedule::{
     build_day_schedule, format_countdown, format_hhmm, next_prayer_with_tomorrow, now_local,
@@ -40,13 +41,17 @@ use windows::Win32::Foundation::{
     COLORREF, ERROR_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
 };
+use windows::Win32::Graphics::Dwm::{
+    DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC,
-    GetSysColorBrush, GetTextExtentPoint32W, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
-    SetTextColor,
-    UpdateWindow, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
-    DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE,
-    FW_BOLD, HDC, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
+    BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject,
+    DrawTextW, Ellipse, EndPaint, FillRect, GetDC, GetStockObject, GetSysColorBrush,
+    GetTextExtentPoint32W, InvalidateRect, ReleaseDC, RoundRect, SelectObject, SetBkMode,
+    SetTextColor, SetWindowRgn, UpdateWindow, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
+    DEFAULT_CHARSET, DEFAULT_PITCH, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE,
+    DT_VCENTER, FF_DONTCARE, FW_BOLD, HDC, HFONT, NULL_PEN, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT, PS_SOLID, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{
@@ -63,11 +68,11 @@ use windows::Win32::UI::Shell::{
     APPBARDATA, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO, NIM_ADD, NIM_DELETE,
     NIM_MODIFY, NOTIFYICONDATAW,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const BAR_CLASS: PCWSTR = w!("MawaqitShellWidget");
 const FLYOUT_CLASS: PCWSTR = w!("MawaqitShellFlyout");
-const PICKER_CLASS: PCWSTR = w!("MawaqitMosquePicker");
 const BAR_H: i32 = 40;
 /// Minimum flyout size; actual size is measured from content + DPI.
 const FLYOUT_W_MIN: i32 = 320;
@@ -75,13 +80,11 @@ const FLYOUT_H_MIN: i32 = 240;
 const FLYOUT_PAD: i32 = 16;
 const FLYOUT_ROW_H: i32 = 26;
 const FLYOUT_HINT: &str = "Click elsewhere to close · tray for menu";
+const FLYOUT_RADIUS: i32 = 14;
 const PREFS_CLASS: PCWSTR = w!("MawaqitPrefs");
-const PICKER_W: i32 = 420;
-const PICKER_H: i32 = 460;
 const WM_APPBAR: u32 = WM_USER + 64;
 const WM_TRAY: u32 = WM_USER + 65;
 const WM_DATA: u32 = WM_USER + 66;
-const WM_SEARCH_DONE: u32 = WM_USER + 67;
 const WM_MOSQUE_PICKED: u32 = WM_USER + 68;
 const WM_CLICKAWAY: u32 = WM_USER + 69;
 const WM_OPEN_SETUP: u32 = WM_USER + 70;
@@ -97,6 +100,7 @@ const IDM_REFRESH: u16 = 1004;
 const IDM_MOSQUE: u16 = 1005;
 const IDM_PREFS: u16 = 1006;
 const IDM_UPDATE: u16 = 1007;
+const IDM_FAV_BASE: u16 = 1200;
 const IDC_N_ENABLE: i32 = 3101;
 const IDC_N_FAJR: i32 = 3102;
 const IDC_N_DHUHR: i32 = 3103;
@@ -114,22 +118,17 @@ const IDC_N_CANCEL: i32 = 3114;
 const IDC_N_UPDATE: i32 = 3115;
 const IDC_N_COUNT_ADHAN: i32 = 3116;
 const IDC_N_COUNT_IQAMA: i32 = 3117;
-const IDC_EDIT: i32 = 2001;
-const IDC_LIST: i32 = 2002;
-const IDC_SEARCH: i32 = 2003;
-const IDC_SELECT: i32 = 2004;
-const IDC_STATUS: i32 = 2005;
-const IDC_CANCEL: i32 = 2006;
-const IDC_MAP: i32 = 2007;
+const IDC_N_FAV_CURRENT: i32 = 3118;
+const IDC_N_FAV_ADD: i32 = 3119;
+const IDC_N_FAV_LIST: i32 = 3120;
+const IDC_N_FAV_REMOVE: i32 = 3121;
 const REFRESH_EVERY_SECS: u64 = 45 * 60;
 
 static BAR_HWND: AtomicIsize = AtomicIsize::new(0);
 static FLYOUT_HWND: AtomicIsize = AtomicIsize::new(0);
-static PICKER_HWND: AtomicIsize = AtomicIsize::new(0);
 static PREFS_HWND: AtomicIsize = AtomicIsize::new(0);
 static MOUSE_HOOK: AtomicIsize = AtomicIsize::new(0);
 static FETCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-static SEARCH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static PREFS_FIRST_RUN: AtomicBool = AtomicBool::new(false);
 static MAP_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
@@ -150,6 +149,7 @@ enum UpdateOutcome {
 }
 
 static UPDATE: Mutex<Option<UpdateOutcome>> = Mutex::new(None);
+static PICKED_MOSQUE: Mutex<Option<MapPick>> = Mutex::new(None);
 
 thread_local! {
     static STATE: RefCell<UiState> = RefCell::new(UiState::default());
@@ -174,7 +174,6 @@ struct UiState {
     config: AppConfig,
     schedule: Option<DaySchedule>,
     last_fetch: Option<Instant>,
-    picker_hits: Vec<MosqueHit>,
     hinst: HINSTANCE,
     notified: HashSet<String>,
 }
@@ -200,7 +199,6 @@ impl Default for UiState {
             config: AppConfig::default(),
             schedule: None,
             last_fetch: None,
-            picker_hits: Vec::new(),
             hinst: HINSTANCE::default(),
             notified: HashSet::new(),
         }
@@ -213,16 +211,11 @@ struct FetchBox {
     error: Option<String>,
 }
 
-struct SearchBox {
-    hits: Option<Result<Vec<MosqueHit>, String>>,
-}
-
 static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
 static FETCH: Mutex<FetchBox> = Mutex::new(FetchBox {
     times: None,
     error: None,
 });
-static SEARCH: Mutex<SearchBox> = Mutex::new(SearchBox { hits: None });
 
 fn hwnd_raw(h: HWND) -> isize {
     h.0 as isize
@@ -323,18 +316,6 @@ unsafe fn register_classes(hinst: HINSTANCE, dark: bool) {
     };
     let _ = RegisterClassW(&fly);
 
-    let picker_bg = CreateSolidBrush(COLORREF(if dark { 0x0028_2828 } else { 0x00F0_F0F0 }));
-    let picker = WNDCLASSW {
-        style: CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(picker_proc),
-        hInstance: hinst,
-        hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-        hbrBackground: picker_bg,
-        lpszClassName: PICKER_CLASS,
-        ..Default::default()
-    };
-    let _ = RegisterClassW(&picker);
-
     let prefs = WNDCLASSW {
         style: CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(prefs_proc),
@@ -366,7 +347,7 @@ unsafe fn create_bar(hinst: HINSTANCE) -> HWND {
 }
 
 unsafe fn create_flyout(hinst: HINSTANCE) -> HWND {
-    CreateWindowExW(
+    let hwnd = CreateWindowExW(
         WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0 | WS_EX_NOACTIVATE.0),
         FLYOUT_CLASS,
         w!("Mawaqit Flyout"),
@@ -380,7 +361,32 @@ unsafe fn create_flyout(hinst: HINSTANCE) -> HWND {
         hinst,
         None,
     )
-    .unwrap_or_default()
+    .unwrap_or_default();
+    if hwnd_ok(hwnd) {
+        let pref = DWMWCP_ROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const core::ffi::c_void,
+            size_of_val(&pref) as u32,
+        );
+        shape_flyout(hwnd);
+    }
+    hwnd
+}
+
+unsafe fn shape_flyout(hwnd: HWND) {
+    if !hwnd_ok(hwnd) {
+        return;
+    }
+    let mut rc = RECT::default();
+    if GetClientRect(hwnd, &mut rc).is_err() {
+        return;
+    }
+    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let r = (FLYOUT_RADIUS * dpi / 96).max(8);
+    let region = CreateRoundRectRgn(0, 0, rc.right + 1, rc.bottom + 1, r * 2, r * 2);
+    let _ = SetWindowRgn(hwnd, region, true);
 }
 
 unsafe fn register_appbar(hwnd: HWND) -> bool {
@@ -629,6 +635,7 @@ unsafe fn toggle_flyout() {
             fh,
             SWP_SHOWWINDOW | SWP_NOACTIVATE,
         );
+        shape_flyout(flyout);
         let _ = ShowWindow(flyout, SW_SHOWNOACTIVATE);
         let _ = InvalidateRect(flyout, None, true);
         install_clickaway_hook();
@@ -714,6 +721,51 @@ unsafe extern "system" fn clickaway_hook(
     )
 }
 
+fn persist_config(cfg: AppConfig) -> Result<(), String> {
+    config::save_config(&cfg).map_err(|e| e.to_string())?;
+    STATE.with(|s| s.borrow_mut().config = cfg);
+    Ok(())
+}
+
+fn apply_mosque(sel: MosqueSelection) -> Result<(), String> {
+    let mut cfg = STATE.with(|s| s.borrow().config.clone());
+    cfg.mosque = Some(sel.clone());
+    persist_config(cfg)?;
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        st.mosque_label = sel.display_name.clone();
+        st.muted = sel.display_name;
+        st.status = String::from("Loading times…");
+        st.chip = String::from("Next  …");
+        st.schedule = None;
+        st.slots.clear();
+        st.last_fetch = None;
+    });
+    refresh_chip();
+    unsafe {
+        let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
+        if hwnd_ok(bar) {
+            request_refresh(bar);
+            let _ = InvalidateRect(bar, None, false);
+        }
+        let prefs = hwnd_from(PREFS_HWND.load(Ordering::SeqCst));
+        if hwnd_ok(prefs) {
+            prefs_refresh_favorites(prefs);
+        }
+    }
+    Ok(())
+}
+
+fn menu_caption(name: &str) -> String {
+    let escaped = name.replace('&', "&&");
+    let count = escaped.chars().count();
+    if count > 42 {
+        format!("{}…", escaped.chars().take(40).collect::<String>())
+    } else {
+        escaped
+    }
+}
+
 unsafe fn show_tray_menu(hwnd: HWND) {
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
@@ -733,6 +785,49 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         let _ = AppendMenuW(menu, MF_STRING, IDM_SHOW as usize, w!("Show prayer bar"));
     }
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+
+    let (favorites, current_id) = STATE.with(|s| {
+        let st = s.borrow();
+        (
+            st.config.favorites.clone(),
+            st.config.mosque.as_ref().map(|m| m.masjid_id.clone()),
+        )
+    });
+    let mut fav_labels: Vec<Vec<u16>> = Vec::new();
+    if let Ok(fav_menu) = CreatePopupMenu() {
+        if !fav_menu.is_invalid() {
+            if favorites.is_empty() {
+                let _ = AppendMenuW(
+                    fav_menu,
+                    MF_STRING | MF_GRAYED,
+                    0,
+                    w!("No favorites yet"),
+                );
+            } else {
+                for (i, fav) in favorites.iter().enumerate().take(MAX_FAVORITES) {
+                    let mut flags = MF_STRING;
+                    if current_id.as_deref() == Some(fav.masjid_id.as_str()) {
+                        flags |= MF_CHECKED;
+                    }
+                    let caption = wide_z(&menu_caption(&fav.display_name));
+                    let _ = AppendMenuW(
+                        fav_menu,
+                        flags,
+                        (IDM_FAV_BASE as usize) + i,
+                        PCWSTR(caption.as_ptr()),
+                    );
+                    fav_labels.push(caption);
+                }
+            }
+            let _ = AppendMenuW(
+                menu,
+                MF_POPUP,
+                fav_menu.0 as usize,
+                w!("Favorites"),
+            );
+        }
+    }
+
     let _ = AppendMenuW(menu, MF_STRING, IDM_MOSQUE as usize, w!("Change mosque…"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_PREFS as usize, w!("Preferences…"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_UPDATE as usize, w!("Check for updates…"));
@@ -752,8 +847,10 @@ unsafe fn show_tray_menu(hwnd: HWND) {
     );
     let _ = DestroyMenu(menu);
     let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+    drop(fav_labels);
 
-    match cmd.0 as u16 {
+    let id = cmd.0 as u16;
+    match id {
         IDM_SHOW => show_bar(true),
         IDM_HIDE => show_bar(false),
         IDM_MOSQUE => open_picker(),
@@ -762,6 +859,12 @@ unsafe fn show_tray_menu(hwnd: HWND) {
         IDM_REFRESH => request_refresh(hwnd),
         IDM_QUIT => {
             PostQuitMessage(0);
+        }
+        fav if (IDM_FAV_BASE..IDM_FAV_BASE + MAX_FAVORITES as u16).contains(&fav) => {
+            let idx = (fav - IDM_FAV_BASE) as usize;
+            if let Some(sel) = favorites.get(idx).cloned() {
+                let _ = apply_mosque(sel);
+            }
         }
         _ => {}
     }
@@ -852,9 +955,9 @@ unsafe fn open_prefs(first_run: bool) {
         },
         WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_VISIBLE.0 | WS_MINIMIZEBOX.0),
         200,
-        160,
+        80,
         440,
-        590,
+        760,
         None,
         None,
         hinst,
@@ -1015,7 +1118,96 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
     );
     set_check(hwnd, IDC_N_COUNT_IQAMA, countdown.is_iqama());
 
-    add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 416, 380);
+    let fav_l = wide_z("Favorites");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(fav_l.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        412,
+        380,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        w!(""),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        436,
+        240,
+        22,
+        hwnd,
+        HMENU(IDC_N_FAV_CURRENT as isize as *mut _),
+        hinst,
+        None,
+    );
+    let add_fav = wide_z("Add to favorites");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(add_fav.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        268,
+        432,
+        148,
+        26,
+        hwnd,
+        HMENU(IDC_N_FAV_ADD as isize as *mut _),
+        hinst,
+        None,
+    );
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
+        w!("LISTBOX"),
+        w!(""),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | WS_TABSTOP.0 | LBS_NOTIFY as u32),
+        20,
+        466,
+        280,
+        80,
+        hwnd,
+        HMENU(IDC_N_FAV_LIST as isize as *mut _),
+        hinst,
+        None,
+    );
+    let remove = wide_z("Remove");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("BUTTON"),
+        PCWSTR(remove.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
+        310,
+        466,
+        100,
+        28,
+        hwnd,
+        HMENU(IDC_N_FAV_REMOVE as isize as *mut _),
+        hinst,
+        None,
+    );
+    let hint = wide_z("Right-click the bar to switch.");
+    let _ = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR(hint.as_ptr()),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
+        20,
+        552,
+        390,
+        20,
+        hwnd,
+        HMENU(0 as *mut _),
+        hinst,
+        None,
+    );
+
+    add_checkbox(hwnd, hinst, IDC_N_AUTOSTART, "Start with Windows", 20, 580, 380);
     set_check(hwnd, IDC_N_AUTOSTART, autostart);
 
     let upd = wide_z("Check for updates…");
@@ -1025,7 +1217,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(upd.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
         20,
-        450,
+        614,
         180,
         28,
         hwnd,
@@ -1041,7 +1233,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(save.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_DEFPUSHBUTTON as u32),
         220,
-        490,
+        654,
         90,
         32,
         hwnd,
@@ -1056,7 +1248,7 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         PCWSTR(cancel.as_ptr()),
         WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
         320,
-        490,
+        654,
         90,
         32,
         hwnd,
@@ -1064,6 +1256,98 @@ unsafe fn prefs_build_controls(hwnd: HWND) {
         hinst,
         None,
     );
+
+    prefs_refresh_favorites(hwnd);
+}
+
+unsafe fn set_ctrl_text(parent: HWND, id: i32, text: &str) {
+    if let Ok(ctrl) = GetDlgItem(parent, id) {
+        let wide = wide_z(text);
+        let _ = SetWindowTextW(ctrl, PCWSTR(wide.as_ptr()));
+    }
+}
+
+unsafe fn prefs_refresh_favorites(hwnd: HWND) {
+    let (current, favorites) = STATE.with(|s| {
+        let st = s.borrow();
+        (st.config.mosque.clone(), st.config.favorites.clone())
+    });
+    let already = current
+        .as_ref()
+        .map(|m| favorites.iter().any(|f| f.masjid_id == m.masjid_id))
+        .unwrap_or(false);
+    match &current {
+        Some(m) => set_ctrl_text(hwnd, IDC_N_FAV_CURRENT, &m.display_name),
+        None => set_ctrl_text(hwnd, IDC_N_FAV_CURRENT, "No mosque selected yet"),
+    }
+    if let Ok(add) = GetDlgItem(hwnd, IDC_N_FAV_ADD) {
+        let label = if already {
+            "In favorites"
+        } else {
+            "Add to favorites"
+        };
+        let wide = wide_z(label);
+        let _ = SetWindowTextW(add, PCWSTR(wide.as_ptr()));
+        let _ = EnableWindow(add, current.is_some() && !already);
+    }
+    if let Ok(list) = GetDlgItem(hwnd, IDC_N_FAV_LIST) {
+        let _ = SendMessageW(list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
+        for fav in &favorites {
+            let wide = wide_z(&fav.display_name);
+            let _ = SendMessageW(
+                list,
+                LB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(wide.as_ptr() as isize),
+            );
+        }
+    }
+    if let Ok(remove) = GetDlgItem(hwnd, IDC_N_FAV_REMOVE) {
+        let _ = EnableWindow(remove, !favorites.is_empty());
+    }
+}
+
+unsafe fn prefs_add_current_favorite(hwnd: HWND) {
+    let Some(sel) = STATE.with(|s| s.borrow().config.mosque.clone()) else {
+        return;
+    };
+    let mut cfg = STATE.with(|s| s.borrow().config.clone());
+    match cfg.add_favorite(sel) {
+        Ok(_) => {
+            if let Err(e) = persist_config(cfg) {
+                let msg = wide_z(&format!("Could not save: {e}"));
+                let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONERROR);
+                return;
+            }
+            prefs_refresh_favorites(hwnd);
+        }
+        Err(e) => {
+            let msg = wide_z(e);
+            let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONINFORMATION);
+        }
+    }
+}
+
+unsafe fn prefs_remove_favorite(hwnd: HWND) {
+    let list = match GetDlgItem(hwnd, IDC_N_FAV_LIST) {
+        Ok(h) if hwnd_ok(h) => h,
+        _ => return,
+    };
+    let sel = SendMessageW(list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    if sel < 0 {
+        return;
+    }
+    let mut cfg = STATE.with(|s| s.borrow().config.clone());
+    let Some(id) = cfg.favorites.get(sel as usize).map(|f| f.masjid_id.clone()) else {
+        return;
+    };
+    cfg.remove_favorite(&id);
+    if let Err(e) = persist_config(cfg) {
+        let msg = wide_z(&format!("Could not save: {e}"));
+        let _ = MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Mawaqit"), MB_OK | MB_ICONERROR);
+        return;
+    }
+    prefs_refresh_favorites(hwnd);
 }
 
 unsafe fn prefs_save(hwnd: HWND) -> bool {
@@ -1167,6 +1451,14 @@ unsafe extern "system" fn prefs_proc(
                     start_update_check(hwnd, true);
                     LRESULT(0)
                 }
+                IDC_N_FAV_ADD => {
+                    prefs_add_current_favorite(hwnd);
+                    LRESULT(0)
+                }
+                IDC_N_FAV_REMOVE => {
+                    prefs_remove_favorite(hwnd);
+                    LRESULT(0)
+                }
                 _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
         }
@@ -1248,30 +1540,42 @@ unsafe extern "system" fn bar_proc(
             LRESULT(0)
         }
         WM_MOSQUE_PICKED => {
-            if let Ok(cfg) = config::load_config() {
-                STATE.with(|s| {
-                    let mut st = s.borrow_mut();
-                    st.config = cfg.clone();
-                    if let Some(m) = &cfg.mosque {
-                        st.mosque_label = m.display_name.clone();
-                        st.muted = m.display_name.clone();
-                        st.status = String::from("Loading times…");
-                        st.schedule = None;
-                        st.slots.clear();
-                        st.last_fetch = None;
+            let pick = {
+                let mut slot = PICKED_MOSQUE.lock().unwrap_or_else(|e| e.into_inner());
+                slot.take()
+            };
+            if let Some(pick) = pick {
+                let sel = MosqueSelection {
+                    masjid_id: pick.slug.clone(),
+                    display_name: pick.label.clone(),
+                };
+                if apply_mosque(sel.clone()).is_ok() {
+                    let mut note = String::from("Prayer times will refresh for your selected mosque.");
+                    if pick.favorite {
+                        let mut cfg = STATE.with(|s| s.borrow().config.clone());
+                        match cfg.add_favorite(sel) {
+                            Ok(_) => {
+                                if persist_config(cfg).is_ok() {
+                                    note = String::from(
+                                        "Saved as current mosque and favorite. Right-click the bar to switch.",
+                                    );
+                                    let prefs = hwnd_from(PREFS_HWND.load(Ordering::SeqCst));
+                                    if hwnd_ok(prefs) {
+                                        prefs_refresh_favorites(prefs);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                note = e.to_string();
+                            }
+                        }
                     }
-                });
-                refresh_chip();
-                request_refresh(hwnd);
-                let _ = InvalidateRect(hwnd, None, false);
-                tray_balloon(
-                    hwnd,
-                    "Mosque saved",
-                    "Prayer times will refresh for your selected mosque.",
-                );
-                let need_setup = STATE.with(|s| !s.borrow().config.notifications.setup_completed);
-                if need_setup {
-                    open_prefs(true);
+                    tray_balloon(hwnd, "Mosque saved", &note);
+                    let need_setup =
+                        STATE.with(|s| !s.borrow().config.notifications.setup_completed);
+                    if need_setup {
+                        open_prefs(true);
+                    }
                 }
             }
             LRESULT(0)
@@ -1350,6 +1654,11 @@ unsafe extern "system" fn flyout_proc(
             paint_flyout(hwnd);
             LRESULT(0)
         }
+        WM_SIZE => {
+            shape_flyout(hwnd);
+            LRESULT(0)
+        }
+        WM_ERASEBKGND => LRESULT(1),
         WM_LBUTTONUP => {
             hide_flyout();
             LRESULT(0)
@@ -1590,173 +1899,7 @@ fn refresh_chip() {
 }
 
 fn open_picker() {
-    unsafe {
-        hide_flyout();
-        open_native_picker();
-    }
-}
-
-unsafe fn open_native_picker() {
-    let existing = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
-    if hwnd_ok(existing) {
-        let _ = ShowWindow(existing, SW_RESTORE);
-        let _ = SetForegroundWindow(existing);
-        return;
-    }
-    let hinst = STATE.with(|s| s.borrow().hinst);
-    let hwnd = CreateWindowExW(
-        WINDOW_EX_STYLE(WS_EX_APPWINDOW.0),
-        PICKER_CLASS,
-        w!("Mawaqit — Choose mosque"),
-        WINDOW_STYLE(
-            WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_VISIBLE.0 | WS_MINIMIZEBOX.0,
-        ),
-        180,
-        120,
-        540,
-        560,
-        None,
-        None,
-        hinst,
-        None,
-    )
-    .unwrap_or_default();
-    if hwnd_ok(hwnd) {
-        PICKER_HWND.store(hwnd_raw(hwnd), Ordering::SeqCst);
-        let _ = SetForegroundWindow(hwnd);
-    } else {
-        PICKER_HWND.store(0, Ordering::SeqCst);
-        let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
-        tray_balloon(
-            bar,
-            "Could not open mosque setup",
-            "Try again from the tray menu: Change mosque…",
-        );
-    }
-}
-
-unsafe fn picker_build_controls(hwnd: HWND) {
-    let hinst = STATE.with(|s| s.borrow().hinst);
-    let hint = wide_z(
-        "Paste a mawaqit.net mosque link, or type a name/city and Search. The map is optional.",
-    );
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("STATIC"),
-        PCWSTR(hint.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
-        16,
-        12,
-        500,
-        36,
-        hwnd,
-        HMENU(0 as *mut _),
-        hinst,
-        None,
-    );
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
-        w!("EDIT"),
-        w!(""),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | ES_AUTOHSCROLL as u32),
-        16,
-        54,
-        380,
-        26,
-        hwnd,
-        HMENU(IDC_EDIT as isize as *mut _),
-        hinst,
-        None,
-    );
-    let search = wide_z("Search");
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        PCWSTR(search.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0 | BS_DEFPUSHBUTTON as u32),
-        406,
-        52,
-        100,
-        28,
-        hwnd,
-        HMENU(IDC_SEARCH as isize as *mut _),
-        hinst,
-        None,
-    );
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(WS_EX_CLIENTEDGE.0),
-        w!("LISTBOX"),
-        w!(""),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | WS_TABSTOP.0 | LBS_NOTIFY as u32),
-        16,
-        92,
-        490,
-        300,
-        hwnd,
-        HMENU(IDC_LIST as isize as *mut _),
-        hinst,
-        None,
-    );
-    let status = wide_z("Waiting for a mosque…");
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("STATIC"),
-        PCWSTR(status.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0),
-        16,
-        400,
-        490,
-        22,
-        hwnd,
-        HMENU(IDC_STATUS as isize as *mut _),
-        hinst,
-        None,
-    );
-    let map = wide_z("Open map…");
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        PCWSTR(map.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
-        16,
-        432,
-        110,
-        32,
-        hwnd,
-        HMENU(IDC_MAP as isize as *mut _),
-        hinst,
-        None,
-    );
-    let use_sel = wide_z("Use selected mosque");
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        PCWSTR(use_sel.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
-        136,
-        432,
-        170,
-        32,
-        hwnd,
-        HMENU(IDC_SELECT as isize as *mut _),
-        hinst,
-        None,
-    );
-    let cancel = wide_z("Cancel");
-    let _ = CreateWindowExW(
-        WINDOW_EX_STYLE(0),
-        w!("BUTTON"),
-        PCWSTR(cancel.as_ptr()),
-        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_TABSTOP.0),
-        396,
-        432,
-        110,
-        32,
-        hwnd,
-        HMENU(IDC_CANCEL as isize as *mut _),
-        hinst,
-        None,
-    );
+    open_map_picker();
 }
 
 unsafe fn offer_webview2_install(err: &str) -> bool {
@@ -1767,7 +1910,7 @@ unsafe fn offer_webview2_install(err: &str) -> bool {
         )
     } else {
         format!(
-            "{err}\n\nThe map needs Microsoft Edge WebView2 (missing on this PC).\nDownload and install it now? (about a minute; mosque search still works without it.)"
+            "{err}\n\nThe map needs Microsoft Edge WebView2 (missing on this PC).\nDownload and install it now? (about a minute.)"
         )
     };
     let msg = wide_z(&body);
@@ -1815,7 +1958,7 @@ unsafe fn offer_webview2_install(err: &str) -> bool {
     }
 }
 
-fn pick_mosque_on_map() -> Option<MosqueHit> {
+fn pick_mosque_on_map() -> Option<MapPick> {
     mawaqit_widget::webview2_rt::prepare();
     if !mawaqit_widget::webview2_rt::is_usable() {
         let _ = unsafe {
@@ -1845,7 +1988,7 @@ fn pick_mosque_on_map() -> Option<MosqueHit> {
         Err(e) => {
             unsafe {
                 let msg = wide_z(&format!(
-                    "{e}\n\nYou can still search by name or paste a mawaqit.net link in the setup window."
+                    "{e}\n\nClose this and try Change mosque again, or install WebView2."
                 ));
                 let _ = MessageBoxW(
                     HWND::default(),
@@ -1865,10 +2008,6 @@ fn open_map_picker() {
     }
     unsafe {
         hide_flyout();
-        let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
-        if hwnd_ok(native) {
-            let _ = ShowWindow(native, SW_HIDE);
-        }
     }
     let bar = BAR_HWND.load(Ordering::SeqCst);
     thread::spawn(move || {
@@ -1883,37 +2022,19 @@ fn open_map_picker() {
             pick_mosque_on_map()
         }));
         MAP_IN_FLIGHT.store(false, Ordering::SeqCst);
-        match result {
-            Ok(Some(hit)) => {
-                let mut cfg = config::load_config().unwrap_or_default();
-                cfg.mosque = Some(MosqueSelection {
-                    masjid_id: hit.slug,
-                    display_name: hit.label,
-                });
-                if config::save_config(&cfg).is_ok() {
-                    unsafe {
-                        let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
-                        if hwnd_ok(native) {
-                            let _ = DestroyWindow(native);
-                        }
-                        let _ = PostMessageW(
-                            hwnd_from(bar),
-                            WM_MOSQUE_PICKED,
-                            WPARAM(0),
-                            LPARAM(0),
-                        );
-                    }
-                }
+        if let Ok(Some(pick)) = result {
+            {
+                let mut slot = PICKED_MOSQUE.lock().unwrap_or_else(|e| e.into_inner());
+                *slot = Some(pick);
             }
-            _ => unsafe {
-                let native = hwnd_from(PICKER_HWND.load(Ordering::SeqCst));
-                if hwnd_ok(native) {
-                    let _ = ShowWindow(native, SW_SHOW);
-                    let _ = SetForegroundWindow(native);
-                } else {
-                    let _ = PostMessageW(hwnd_from(bar), WM_OPEN_SETUP, WPARAM(0), LPARAM(0));
-                }
-            },
+            unsafe {
+                let _ = PostMessageW(
+                    hwnd_from(bar),
+                    WM_MOSQUE_PICKED,
+                    WPARAM(0),
+                    LPARAM(0),
+                );
+            }
         }
     });
 }
@@ -2052,188 +2173,6 @@ unsafe fn handle_update_done(hwnd: HWND) {
             );
             apply_downloaded_update(hwnd, path);
         }
-    }
-}
-
-unsafe fn set_picker_status(hwnd: HWND, text: &str) {
-    let status = GetDlgItem(hwnd, IDC_STATUS).unwrap_or_default();
-    if hwnd_ok(status) {
-        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        let _ = SetWindowTextW(status, PCWSTR(wide.as_ptr()));
-    }
-}
-
-unsafe fn picker_run_search(hwnd: HWND) {
-    let edit = GetDlgItem(hwnd, IDC_EDIT).unwrap_or_default();
-    if !hwnd_ok(edit) {
-        return;
-    }
-    let mut buf = [0u16; 256];
-    let n = GetWindowTextW(edit, &mut buf);
-    let q = String::from_utf16_lossy(&buf[..n as usize]).trim().to_string();
-    if q.is_empty() {
-        set_picker_status(hwnd, "Enter a search term first.");
-        return;
-    }
-    if SEARCH_IN_FLIGHT.swap(true, Ordering::SeqCst) {
-        set_picker_status(hwnd, "Search already running…");
-        return;
-    }
-    set_picker_status(hwnd, "Searching…");
-    let api = STATE.with(|s| s.borrow().config.api_base_url.clone());
-    let hwnd_raw = hwnd_raw(hwnd);
-    thread::spawn(move || {
-        let result = MawaqitClient::new(api)
-            .and_then(|c| c.search_mosques(&q))
-            .map_err(|e| e.to_string());
-        {
-            let mut box_ = SEARCH.lock().unwrap_or_else(|e| e.into_inner());
-            box_.hits = Some(result);
-        }
-        SEARCH_IN_FLIGHT.store(false, Ordering::SeqCst);
-        let _ = PostMessageW(hwnd_from(hwnd_raw), WM_SEARCH_DONE, WPARAM(0), LPARAM(0));
-    });
-}
-
-unsafe fn picker_apply_search(hwnd: HWND) {
-    let taken = {
-        let mut box_ = SEARCH.lock().unwrap_or_else(|e| e.into_inner());
-        box_.hits.take()
-    };
-    let Some(result) = taken else {
-        return;
-    };
-    let list = GetDlgItem(hwnd, IDC_LIST).unwrap_or_default();
-    if hwnd_ok(list) {
-        let _ = SendMessageW(list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
-    }
-    match result {
-        Ok(hits) => {
-            STATE.with(|s| s.borrow_mut().picker_hits = hits.clone());
-            if hits.is_empty() {
-                set_picker_status(hwnd, "No mosques found.");
-            } else {
-                for hit in &hits {
-                    if hwnd_ok(list) {
-                        let wide: Vec<u16> =
-                            hit.label.encode_utf16().chain(std::iter::once(0)).collect();
-                        let _ = SendMessageW(
-                            list,
-                            LB_ADDSTRING,
-                            WPARAM(0),
-                            LPARAM(wide.as_ptr() as isize),
-                        );
-                    }
-                }
-                set_picker_status(hwnd, &format!("{} result(s) — select one, then Use selected.", hits.len()));
-            }
-        }
-        Err(e) => {
-            STATE.with(|s| s.borrow_mut().picker_hits.clear());
-            set_picker_status(hwnd, &e);
-        }
-    }
-}
-
-unsafe fn picker_select(hwnd: HWND) {
-    let list = GetDlgItem(hwnd, IDC_LIST).unwrap_or_default();
-    if !hwnd_ok(list) {
-        return;
-    }
-    let sel = SendMessageW(list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
-    if sel < 0 {
-        set_picker_status(hwnd, "Select a mosque in the list.");
-        return;
-    }
-    let hit = STATE.with(|s| s.borrow().picker_hits.get(sel as usize).cloned());
-    let Some(hit) = hit else {
-        set_picker_status(hwnd, "Invalid selection.");
-        return;
-    };
-
-    let mut cfg = STATE.with(|s| s.borrow().config.clone());
-    cfg.mosque = Some(MosqueSelection {
-        masjid_id: hit.slug.clone(),
-        display_name: hit.label.clone(),
-    });
-    if let Err(e) = config::save_config(&cfg) {
-        set_picker_status(hwnd, &format!("Save failed: {e}"));
-        return;
-    }
-
-    STATE.with(|s| {
-        let mut st = s.borrow_mut();
-        st.config = cfg;
-        st.mosque_label = hit.label.clone();
-        st.muted = hit.label.clone();
-        st.schedule = None;
-        st.slots.clear();
-        st.status = String::from("Loading times…");
-        st.chip = String::from("Next  …");
-        st.last_fetch = None;
-    });
-    refresh_chip();
-
-    let bar = hwnd_from(BAR_HWND.load(Ordering::SeqCst));
-    if hwnd_ok(bar) {
-        request_refresh(bar);
-        let _ = InvalidateRect(bar, None, false);
-    }
-
-    let _ = DestroyWindow(hwnd);
-}
-
-unsafe extern "system" fn picker_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_CREATE => {
-            picker_build_controls(hwnd);
-            LRESULT(0)
-        }
-        WM_COMMAND => {
-            let id = (wparam.0 as u16) as i32;
-            let code = (wparam.0 >> 16) as u16;
-            match id {
-                IDC_SEARCH => {
-                    picker_run_search(hwnd);
-                    LRESULT(0)
-                }
-                IDC_SELECT => {
-                    picker_select(hwnd);
-                    LRESULT(0)
-                }
-                IDC_MAP => {
-                    open_map_picker();
-                    LRESULT(0)
-                }
-                IDC_CANCEL => {
-                    let _ = DestroyWindow(hwnd);
-                    LRESULT(0)
-                }
-                IDC_LIST if code == LBN_DBLCLK as u16 => {
-                    picker_select(hwnd);
-                    LRESULT(0)
-                }
-                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-            }
-        }
-        WM_SEARCH_DONE => {
-            picker_apply_search(hwnd);
-            LRESULT(0)
-        }
-        WM_CLOSE => {
-            let _ = DestroyWindow(hwnd);
-            LRESULT(0)
-        }
-        WM_DESTROY => {
-            PICKER_HWND.store(0, Ordering::SeqCst);
-            LRESULT(0)
-        }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 
@@ -2387,13 +2326,8 @@ fn flyout_title(next_name: &str, next_hhmm: &str, iqama: bool) -> String {
     }
 }
 
-fn flyout_slot_left(slot: &PrayerSlot, next_name: &str) -> String {
-    let mark = if slot.kind.label() == next_name {
-        ">"
-    } else {
-        " "
-    };
-    format!("{mark}  {}", slot.kind.label())
+fn flyout_slot_left(slot: &PrayerSlot) -> String {
+    slot.kind.label().to_string()
 }
 
 fn flyout_slot_right(slot: &PrayerSlot) -> String {
@@ -2448,7 +2382,9 @@ unsafe fn measure_flyout_size(hwnd: HWND) -> (i32, i32) {
         content_w = content_w.max(text_width(hdc, msg));
     } else {
         for slot in &slots {
-            let row_w = text_width(hdc, &flyout_slot_left(slot, &next_name))
+            let marker = 20 * dpi_u as i32 / 96;
+            let row_w = marker
+                + text_width(hdc, &flyout_slot_left(slot))
                 + 24
                 + text_width(hdc, &flyout_slot_right(slot));
             content_w = content_w.max(row_w);
@@ -2495,19 +2431,20 @@ unsafe fn paint_flyout(hwnd: HWND) {
     let mut rc = RECT::default();
     let _ = GetClientRect(hwnd, &mut rc);
 
-    let brush = CreateSolidBrush(COLORREF(bg));
-    let _ = FillRect(hdc, &rc, brush);
-    let _ = DeleteObject(brush);
-
-    let border = CreateSolidBrush(COLORREF(if dark { 0x0040_4040 } else { 0x00C8_C8C8 }));
-    let top = RECT {
-        left: 0,
-        top: 0,
-        right: rc.right,
-        bottom: 1,
-    };
-    let _ = FillRect(hdc, &top, border);
-    let _ = DeleteObject(border);
+    let radius = (FLYOUT_RADIUS * GetDpiForWindow(hwnd).max(96) as i32 / 96).max(8);
+    let bg_brush = CreateSolidBrush(COLORREF(bg));
+    let border_pen = CreatePen(
+        PS_SOLID,
+        1,
+        COLORREF(if dark { 0x0040_4040 } else { 0x00C8_C8C8 }),
+    );
+    let old_brush = SelectObject(hdc, bg_brush);
+    let old_pen = SelectObject(hdc, border_pen);
+    let _ = RoundRect(hdc, 0, 0, rc.right, rc.bottom, radius * 2, radius * 2);
+    let _ = SelectObject(hdc, old_brush);
+    let _ = SelectObject(hdc, old_pen);
+    let _ = DeleteObject(bg_brush);
+    let _ = DeleteObject(border_pen);
 
     let _ = SetBkMode(hdc, TRANSPARENT);
     let dpi_u = GetDpiForWindow(hwnd).max(96);
@@ -2566,12 +2503,25 @@ unsafe fn paint_flyout(hwnd: HWND) {
             let is_next = slot.kind.label() == next_name.as_str();
             let _ = SetTextColor(hdc, COLORREF(if is_next { accent } else { fg }));
             let y = body_top + (i as i32) * row_h;
-            let left = flyout_slot_left(slot, &next_name);
+            let left = flyout_slot_left(slot);
             let right = flyout_slot_right(slot);
             let mut left_w = wide(&left);
             let mut right_w = wide(&right);
+            let marker = 20 * dpi / 96;
+            if is_next {
+                let d = (8 * dpi / 96).max(6);
+                let cx = pad + marker / 2;
+                let cy = y + row_h / 2;
+                let dot = CreateSolidBrush(COLORREF(accent));
+                let prev_brush = SelectObject(hdc, dot);
+                let prev_pen = SelectObject(hdc, GetStockObject(NULL_PEN));
+                let _ = Ellipse(hdc, cx - d / 2, cy - d / 2, cx - d / 2 + d, cy - d / 2 + d);
+                let _ = SelectObject(hdc, prev_brush);
+                let _ = SelectObject(hdc, prev_pen);
+                let _ = DeleteObject(dot);
+            }
             let mut left_rc = RECT {
-                left: pad,
+                left: pad + marker,
                 top: y,
                 right: rc.right - pad - text_width(hdc, &right) - 12,
                 bottom: y + row_h,

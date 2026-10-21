@@ -3,7 +3,10 @@
 
 fn main() {
     if let Err(e) = mawaqit_widget::map_picker::run(|hit| match hit {
-        Some(h) => println!("selected: {} ({})", h.label, h.slug),
+        Some(h) => println!(
+            "selected: {} ({}) favorite={}",
+            h.label, h.slug, h.favorite
+        ),
         None => println!("cancelled"),
     }) {
         eprintln!("{e}");
