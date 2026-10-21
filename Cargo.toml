@@ -1,6 +1,6 @@
 [package]
 name = "mawaqit-widget"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Mawaqit Widget — Awqat Salaat–inspired Windows taskbar prayer times"
 license = "MIT"
