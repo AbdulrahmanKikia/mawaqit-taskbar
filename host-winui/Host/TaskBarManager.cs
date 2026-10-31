@@ -1,0 +1,529 @@
+// Adapted from Awqat Salaat (https://github.com/Khiro95/Awqat-Salaat)
+// Copyright (c) 2023 Khiro
+// Licensed under the MIT License.
+using Mawaqit.WinUI.Helpers;
+using Mawaqit.WinUI.Interop;
+using Mawaqit.WinUI.Data;
+using H.NotifyIcon.Core;
+using Microsoft.UI.Dispatching;
+using Serilog;
+using System;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using System.Windows.Input;
+
+namespace Mawaqit.WinUI
+{
+    internal static class TaskBarManager
+    {
+        private static readonly System.Drawing.Icon AppIcon;
+        private static TrayIconWithContextMenu trayIcon;
+        private static IWidgetHost taskBarWidget;
+        private static DispatcherQueue dispatcher;
+
+        private static PopupMenuItem showItem;
+        private static PopupMenuItem hideItem;
+        private static PopupMenuItem repositionItem;
+        private static PopupMenuItem manualPositionItem;
+        private static PopupMenuItem quitItem;
+        private static PopupMenuItem primaryItem;
+        private static PopupSubMenu displaySubMenu;
+        private static PopupMenuSeparator displaySeparator = new PopupMenuSeparator();
+        private static PopupSubMenu placementSubMenu;
+        private static PopupMenuItem injectedItem;
+        private static PopupMenuItem stripItem;
+
+        private static string latestDisplay;
+        private static bool isPurposelyHidden;
+
+        public static IntPtr CurrentWidgetHandle => taskBarWidget?.Handle ?? throw new InvalidOperationException("The taskbar widget is missing.");
+        public static ICommand ShowWidget { get; }
+        public static ICommand HideWidget { get; }
+        public static ICommand RepositionWidget { get; }
+        public static ICommand ManuallyPositionWidget { get; }
+        public static ICommand SetDisplay { get; }
+
+        static TaskBarManager()
+        {
+            ShowWidget = new RelayCommand(static o =>
+            {
+                Log.Information("Clicked on Show");
+                ShowWidgetExecute();
+            });
+            HideWidget = new RelayCommand(static o =>
+            {
+                Log.Information("Clicked on Hide");
+                HideWidgetExecute(showNotification: true);
+            });
+            RepositionWidget = new RelayCommand(static o =>
+            {
+                Log.Information("Clicked on Re-position");
+                taskBarWidget?.UpdatePosition(true);
+            });
+            ManuallyPositionWidget = new RelayCommand(static o =>
+            {
+                Log.Information("Clicked on Manual position");
+                taskBarWidget?.StartDragging();
+            });
+            SetDisplay = new RelayCommand(static o =>
+            {
+                string option = o.ToString();
+                Log.Information("Clicked on a Display option: " + option);
+                SwitchDisplay(option);
+            },
+            static o => (o as string) == "PRIMARY" || SystemInfos.ShowTaskbarOnAllDisplays());
+
+            App.Quitting += App_Quitting;
+            LocaleManager.Default.CurrentChanged += (_, _) => UpdateTrayIconLocalization();
+            DisplayHelper.DisplayChanged += DisplayHelper_DisplayChanged;
+            TaskbarSettingsWatcher.SettingChanged += TaskbarSettingsWatcher_SettingChanged;
+            NotificationService.ShowWidgetRequested += NotificationManager_ShowWidgetRequested;
+
+            AppIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
+        }
+
+        private static void TaskbarSettingsWatcher_SettingChanged(object sender, TaskbarSettingChangedEventArgs e)
+        {
+            if (e.Setting == TaskbarSetting.ShowOnAllDisplays)
+            {
+                bool enabled = SystemInfos.ShowTaskbarOnAllDisplays();
+
+                foreach (var item in displaySubMenu.Items.OfType<PopupMenuItem>())
+                {
+                    item.Enabled = ReferenceEquals(item, primaryItem) || enabled;
+                }
+            }
+        }
+
+        private static void DisplayHelper_DisplayChanged(object sender, DisplayChangedEventArgs e)
+        {
+            var affectedDisplay = e.DisplayEntity?.Display?.DevicePath;
+            var displaySetting = HostPrefs.Display;
+
+            if (e.Reason == DisplayChangedReason.PrimaryDisplay && displaySetting == "PRIMARY")
+            {
+                Log.Information("Moving the widget to the new primary display");
+                dispatcher.TryEnqueue(HideThenShow);
+            }
+            else if (e.Reason is DisplayChangedReason.PrimaryDuplicated or DisplayChangedReason.PrimaryDeduplicated
+                && displaySetting != "PRIMARY"
+                && latestDisplay == affectedDisplay)
+            {
+                Log.Information("Re-showing the widget because the primary display was (de)duplicated to/from the current display");
+                dispatcher.TryEnqueue(HideThenShow);
+            }
+            // If the widget is shown in the dosconnected display, then we need to move it to another one
+            else if (e.Reason == DisplayChangedReason.Disconnected && affectedDisplay == latestDisplay)
+            {
+                // Wait a little to ensure the widget is destroyed if it was previously visible
+                Task.Delay(100).ContinueWith(t =>
+                {
+                    if (!isPurposelyHidden)
+                    {
+                        Log.Information("Showing the widget again after disconnecting the related display");
+                        dispatcher.TryEnqueue(ShowWidgetExecute);
+                    }
+                });
+            }
+            // If the connected display is the one chosen by the user, then we move the widget there
+            else if (e.Reason == DisplayChangedReason.Connected && affectedDisplay == displaySetting)
+            {
+                Log.Information("Moving the widget the user's preferred display after connecting it");
+                dispatcher.TryEnqueue(HideThenShow);
+            }
+
+            UpdateDisplayTrayMenus();
+        }
+
+        private static void HideThenShow()
+        {
+            if (taskBarWidget is not null)
+            {
+                HideWidgetExecute();
+                ShowWidgetExecute();
+            }
+        }
+
+        private static void SwitchDisplay(string target)
+        {
+            try
+            {
+                Log.Information($"Switching display to: {target}");
+                bool widgetVisible = taskBarWidget is not null;
+
+                if (widgetVisible)
+                {
+                    HideWidgetExecute();
+                }
+
+                HostPrefs.Display = target;
+                HostPrefs.CustomPosition = -1;
+
+                if (HostPrefs.IsConfigured)
+                {
+                    HostPrefs.Save();
+                }
+
+                UpdateDisplayTrayMenus();
+
+                if (widgetVisible)
+                {
+                    ShowWidgetExecute();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"An error occured while switching the display");
+#if DEBUG
+                throw;
+#endif
+            }
+        }
+
+        private static void NotificationManager_ShowWidgetRequested()
+        {
+            if (taskBarWidget is null)
+            {
+                Log.Information("Showing widget after clicking on toast notification");
+                dispatcher.TryEnqueue(ShowWidgetExecute);
+            }
+        }
+
+        public static void Initialize(DispatcherQueue dispatcherQueue)
+        {
+            dispatcher = dispatcherQueue;
+
+            if (trayIcon is null)
+            {
+                Log.Information("Creating system tray icon");
+                showItem = new PopupMenuItem("Show", (_, _) =>
+                {
+                    Log.Information("Clicked on Show from tray icon");
+                    dispatcher.TryEnqueue(ShowWidgetExecute);
+                });
+                hideItem = new PopupMenuItem("Hide", (_, _) =>
+                {
+                    Log.Information("Clicked on Hide from tray icon");
+                    dispatcher.TryEnqueue(() => HideWidgetExecute(showNotification: true));
+                });
+                repositionItem = new PopupMenuItem("Re-position", (_, _) =>
+                {
+                    Log.Information("Clicked on Re-position from tray icon");
+                    taskBarWidget?.UpdatePosition(true);
+                });
+                manualPositionItem = new PopupMenuItem("Manual position", (_, _) =>
+                {
+                    Log.Information("Clicked on Manual position from tray icon");
+                    dispatcher.TryEnqueue(() => taskBarWidget?.StartDragging());
+                });
+                displaySubMenu = new PopupSubMenu("Display")
+                {
+                    Items =
+                    {
+                        (primaryItem = new PopupMenuItem("Always Primary", (s, _) => OnDisplayMenuItemClick((PopupMenuItem)s, "PRIMARY")))
+                    }
+                };
+                quitItem = new PopupMenuItem("Quit", (_, _) =>
+                {
+                    Log.Information("Clicked on Quit from tray icon");
+                    dispatcher.TryEnqueue(() => App.Quit.Execute(null));
+                });
+                injectedItem = new PopupMenuItem("In the taskbar", (_, _) => dispatcher.TryEnqueue(() =>
+                {
+                    if (HostPrefs.Host != HostKind.Injected) SwitchHost(HostKind.Injected);
+                }));
+                stripItem = new PopupMenuItem("Screen strip", (_, _) => dispatcher.TryEnqueue(() =>
+                {
+                    if (HostPrefs.Host != HostKind.Strip) SwitchHost(HostKind.Strip);
+                }));
+                placementSubMenu = new PopupSubMenu("Placement")
+                {
+                    Items = { injectedItem, stripItem }
+                };
+
+                trayIcon = new TrayIconWithContextMenu()
+                {
+                    ContextMenu = new PopupMenu
+                    {
+                        Items =
+                        {
+                            showItem,
+                            hideItem,
+                            new PopupMenuSeparator(),
+                            repositionItem,
+                            manualPositionItem,
+                            displaySeparator,
+                            displaySubMenu,
+                            placementSubMenu,
+                            new PopupMenuSeparator(),
+                            quitItem,
+                        }
+                    },
+                    Icon = AppIcon.Handle,
+                };
+
+                UpdateTrayIconLocalization();
+                trayIcon.MessageWindow.TaskbarCreated += (_, _) => dispatcher.TryEnqueue(OnTaskbarCreated);
+                trayIcon.Created += TrayIcon_Created;
+                trayIcon.Create();
+            }
+
+            ShowWidgetExecute();
+        }
+
+        public static void InvalidateWidgetElementsAlignment(bool autoAlign) => taskBarWidget?.InvalidateElementsAlignment(autoAlign);
+
+        public static void SwitchHost(HostKind kind)
+        {
+            Log.Information($"Switching host to {kind}");
+            bool visible = taskBarWidget is not null;
+            if (visible) HideWidgetExecute();
+            HostPrefs.Host = kind;
+            if (HostPrefs.IsConfigured) HostPrefs.Save();
+            UpdatePlacementTrayMenus();
+            if (visible || !isPurposelyHidden)
+                ShowWidgetExecute();
+        }
+
+        public static void Balloon(string title, string body)
+        {
+            try { trayIcon?.ShowNotification(title, body); }
+            catch { /* toaster optional */ }
+        }
+
+        private static void TrayIcon_Created(object sender, EventArgs e)
+        {
+            UpdateDisplayTrayMenus();
+
+            //Unfortunately, we can't handle WM_QUERYENDSESSION and WM_ENDSESSION messages in widget's window procedure because it has a parent.
+            //So instead of creating an other hidden top-level window, we subclass the window of the tray icon
+            //which receives WM_QUERYENDSESSION and WM_ENDSESSION messages. Two birds with one stone :)
+            try
+            {
+                SubclassTrayIconWindow();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"Could not subclass tray icon window: {ex.Message}");
+#if DEBUG
+                throw;
+#endif
+            }
+        }
+
+        private static WndProc newWndProc;
+        private static IntPtr oldWndProcPtr;
+        private static IntPtr previousTrayIconWindowHandle = IntPtr.Zero;
+
+        private static void SubclassTrayIconWindow()
+        {
+            const int GWLP_WNDPROC = -4;
+
+            if (trayIcon.WindowHandle != previousTrayIconWindowHandle)
+            {
+                Log.Information("Subclassing tray icon's message window");
+                newWndProc = new WndProc(SubclassWindowProc);
+                var procPtr = Marshal.GetFunctionPointerForDelegate(newWndProc);
+                var oldPtr = IntPtr.Size == 8
+                    ? User32.SetWindowLongPtr(trayIcon.WindowHandle, GWLP_WNDPROC, procPtr)
+                    : (IntPtr)User32.SetWindowLong(trayIcon.WindowHandle, GWLP_WNDPROC, (uint)procPtr.ToInt32());
+
+                if (oldPtr == IntPtr.Zero)
+                {
+                    var error = Marshal.GetLastWin32Error();
+                    Log.Warning($"Could not subclass tray icon window. Error=0x{error:X2}");
+                    return;
+                }
+
+                oldWndProcPtr = oldPtr;
+                previousTrayIconWindowHandle = trayIcon.WindowHandle;
+            }
+        }
+
+        private static IntPtr SubclassWindowProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam)
+        {
+            const int ENDSESSION_CLOSEAPP = 0x00000001;
+            var msg = (WindowMessage)uMsg;
+
+            if (msg == WindowMessage.WM_QUERYENDSESSION && ((lParam.ToInt64() & ENDSESSION_CLOSEAPP) == ENDSESSION_CLOSEAPP))
+            {
+                Log.Information("The widget is queried for session ending");
+                // The app is being updated so we should restart
+                Kernel32.RegisterApplicationRestart(null);
+                return new IntPtr(1); // true
+            }
+            else if (msg == WindowMessage.WM_ENDSESSION && wParam.ToInt64() == 1 && ((lParam.ToInt64() & ENDSESSION_CLOSEAPP) == ENDSESSION_CLOSEAPP))
+            {
+                Log.Information("The widget is asked to end session");
+                dispatcher.TryEnqueue(() => App.Quit.Execute(null));
+            }
+
+            return User32.CallWindowProc(oldWndProcPtr, hWnd, uMsg, wParam, lParam);
+        }
+
+        private static void App_Quitting()
+        {
+            using (trayIcon)
+            {
+                Log.Information("Removing tray icon");
+                trayIcon.TryRemove();
+            }
+
+            HideWidgetExecute();
+        }
+
+        private static void ShowWidgetExecute()
+        {
+            Log.Information("Showing widget");
+
+            if (taskBarWidget is null)
+            {
+                Log.Information("Creating widget");
+
+                var display = DisplayHelper.FindProperDisplay(HostPrefs.Display);
+                IWidgetHost widget = WidgetHostFactory.Create(display, HostPrefs.Host);
+                try
+                {
+                    widget.Initialize();
+                }
+                catch (Exception ex) when (ex is not WidgetNotInjectedException)
+                {
+                    Log.Warning(ex, "host initialize failed");
+                    widget.Dispose();
+                    NotificationService.Show("Could not show the widget", ex.Message);
+                    UpdateTrayMenuItemsStates(false);
+                    return;
+                }
+
+                widget.Destroying += Widget_Destroying;
+                widget.Show();
+
+                taskBarWidget = widget;
+                isPurposelyHidden = false;
+                latestDisplay = display.Display.DevicePath;
+
+                UpdateTrayMenuItemsStates(true);
+                UpdatePlacementTrayMenus();
+            }
+        }
+
+        private static void HideWidgetExecute(bool showNotification = false)
+        {
+            Log.Information("Hiding widget");
+
+            if (taskBarWidget is not null)
+            {
+                using (taskBarWidget)
+                {
+                    Log.Information("Destroying widget");
+                    taskBarWidget.Destroy();
+                    isPurposelyHidden = true;
+                }
+
+                if (showNotification)
+                {
+                    NotificationService.SendWidgetStillRunningToast();
+                }
+            }
+        }
+
+        private static void Widget_Destroying(object sender, EventArgs e)
+        {
+            if (sender is IWidgetHost host)
+                host.Destroying -= Widget_Destroying;
+            UpdateTrayMenuItemsStates(false);
+
+            taskBarWidget = null;
+            Log.Information("Widget destroyed");
+        }
+
+        private static void OnTaskbarCreated()
+        {
+            try
+            {
+                Log.Information("Taskbar created");
+                _ = trayIcon.TryRemove();
+                trayIcon.Create();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, $"Something went wrong while creating tray icon after taskbar creation: {ex.Message}");
+#if DEBUG
+                throw;
+#endif
+            }
+
+            HideThenShow();
+        }
+
+        private static void OnDisplayMenuItemClick(PopupMenuItem item, string targetDisplay)
+        {
+            if (item.Checked || !HostPrefs.IsConfigured)
+                return;
+
+            Log.Information("Clicked on a Display option from tray icon: " + targetDisplay);
+            dispatcher.TryEnqueue(() => SwitchDisplay(targetDisplay));
+        }
+
+        private static void UpdateDisplayTrayMenus()
+        {
+            Log.Information("Updating tray's Display context-menu");
+            bool enabled = SystemInfos.ShowTaskbarOnAllDisplays();
+            int count = 0;
+            displaySubMenu.Items.Clear();
+            displaySubMenu.Items.Add(primaryItem);
+            primaryItem.Checked = "PRIMARY" == HostPrefs.Display;
+
+            foreach (var display in DisplayHelper.AvailableDisplays)
+            {
+                var item = new PopupMenuItem(display.Summary, (s, _) => OnDisplayMenuItemClick((PopupMenuItem)s, display.Display.DevicePath))
+                {
+                    Checked = display.Display.DevicePath == HostPrefs.Display,
+                    Enabled = enabled,
+                };
+                displaySubMenu.Items.Add(item);
+                count++;
+            }
+
+            Log.Information($"Added {count} tray sub-item's");
+
+            displaySubMenu.Visible = displaySeparator.Visible = count > 1;
+        }
+
+        private static void UpdateTrayMenuItemsStates(bool isWidgetVisible)
+        {
+            Log.Information($"Updating tray icon menu states. (widget visible: {isWidgetVisible})");
+            showItem.Enabled = !isWidgetVisible;
+            hideItem.Enabled = isWidgetVisible;
+            repositionItem.Enabled = isWidgetVisible;
+            manualPositionItem.Enabled = isWidgetVisible
+                && (taskBarWidget?.Capabilities.HasFlag(WidgetHostCapabilities.SupportsManualPlace) ?? false);
+        }
+
+        private static void UpdatePlacementTrayMenus()
+        {
+            if (injectedItem is null) return;
+            injectedItem.Checked = HostPrefs.Host == HostKind.Injected;
+            stripItem.Checked = HostPrefs.Host == HostKind.Strip;
+        }
+
+        private static void UpdateTrayIconLocalization()
+        {
+            trayIcon.UpdateToolTip(LocaleManager.Default.Get("Data.AppName"));
+            showItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Show");
+            hideItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Hide");
+            repositionItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Reposition");
+            manualPositionItem.Text = LocaleManager.Default.Get("UI.ContextMenu.ManualPosition");
+            displaySubMenu.Text = LocaleManager.Default.Get("UI.ContextMenu.Display");
+            primaryItem.Text = LocaleManager.Default.Get("UI.ContextMenu.AlwaysPrimary");
+            quitItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Quit");
+            if (placementSubMenu != null) placementSubMenu.Text = "Placement";
+            if (injectedItem != null) injectedItem.Text = "In the taskbar";
+            if (stripItem != null) stripItem.Text = "Screen strip";
+            UpdatePlacementTrayMenus();
+
+            trayIcon.ContextMenu.RightToLeft = LocaleManager.Default.CurrentCulture.TextInfo.IsRightToLeft;
+        }
+    }
+}

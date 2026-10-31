@@ -1,4 +1,7 @@
+.vs/
 /target
+**/bin/
+**/obj/
 **/*.rs.bk
 .env
 .DS_Store

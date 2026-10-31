@@ -1,0 +1,71 @@
+<UserControl
+    x:Class="Mawaqit.WinUI.Views.WidgetSummary"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Mawaqit.WinUI.Controls"
+    xmlns:local="using:Mawaqit.WinUI.Views">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <StaticResource x:Key="ToggleButtonBackground" ResourceKey="ControlFillColorTransparentBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="ControlFillColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="ControlFillColorSecondaryBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="ControlFillColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonForeground" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrushPointerOver" ResourceKey="ControlStrokeColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="ControlStrokeColorDefaultBrush" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <StaticResource x:Key="ToggleButtonBackground" ResourceKey="ControlFillColorTransparentBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="ControlFillColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="ControlFillColorSecondaryBrush" />
+                    <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="ControlFillColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonForeground" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="TextFillColorPrimaryBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrushPointerOver" ResourceKey="ControlStrokeColorDefaultBrush" />
+                    <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="ControlStrokeColorDefaultBrush" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid>
+        <controls:ToggleButtonEx
+            x:Name="toggle"
+            Padding="4,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch"
+            BorderThickness="1"
+            CornerRadius="4"
+            Click="Toggle_Click"
+            RightTapped="Toggle_RightTapped">
+            <Grid>
+                <TextBlock x:Name="expandedTb" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="compactTb" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Visibility="Collapsed" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="setupTb" Text="Tap to start" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+            </Grid>
+            <FlyoutBase.AttachedFlyout>
+                <controls:FlyoutEx
+                    x:Name="flyout"
+                    ShouldConstrainToRootBounds="False"
+                    Placement="Top"
+                    Opened="Flyout_Opened"
+                    Closed="Flyout_Closed">
+                    <Flyout.FlyoutPresenterStyle>
+                        <Style TargetType="FlyoutPresenter" BasedOn="{StaticResource DefaultFlyoutPresenterStyle}">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="MaxWidth" Value="420"/>
+                        </Style>
+                    </Flyout.FlyoutPresenterStyle>
+                    <local:WidgetPanel x:Name="panel" MinWidth="260"/>
+                </controls:FlyoutEx>
+            </FlyoutBase.AttachedFlyout>
+        </controls:ToggleButtonEx>
+    </Grid>
+</UserControl>

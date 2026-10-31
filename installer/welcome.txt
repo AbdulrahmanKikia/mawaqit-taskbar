@@ -1,17 +1,20 @@
 Welcome to Mawaqit Widget
 
-This installs a small prayer-times strip above your Windows taskbar.
+This installs a prayer-times chip on your Windows 11 taskbar
+(Awqat Salaat–style: a child of the taskbar, not a floating overlay).
 
 After setup:
-  • A strip appears on the left above the taskbar
+  • A chip appears on the taskbar next to the clock / Widgets
   • Left-click it to see today's prayer times
   • Right-click → "Change mosque…" to pick your mosque on a map
+  • If inject fails, use the tray icon near the clock
 
 Requirements:
-  • Windows 10 or Windows 11 (64-bit)
+  • Windows 11 (64-bit), build 22000 or later
   • Internet connection
   • Microsoft Edge WebView2 Runtime for the in-app mosque map
-    (Setup installs it if missing; the map can also open in your browser)
+    (Setup installs it if missing)
+  • Windows App SDK 1.5 is bundled in this installer (self-contained)
 
 No programming tools are required.
 

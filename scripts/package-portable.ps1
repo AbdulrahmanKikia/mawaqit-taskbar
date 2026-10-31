@@ -6,30 +6,32 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$Version = "0.1.0"
-$toml = Get-Content (Join-Path $Root "Cargo.toml") -Raw
-if ($toml -match 'version\s*=\s*"([^"]+)"') { $Version = $Matches[1] }
+$Version = "0.2.0"
+$csproj = Get-Content (Join-Path $Root "host-winui\Mawaqit.WinUI.csproj") -Raw
+if ($csproj -match '<Version>([^<]+)</Version>') { $Version = $Matches[1] }
 
-$Dist = Join-Path $Root "dist"
-$Widget = Join-Path $Dist "widget.exe"
-if (-not (Test-Path $Widget)) {
-    Write-Host "Building release first..."
+$Winui = Join-Path $Root "dist\winui"
+$Exe = Join-Path $Winui "Mawaqit Widget.exe"
+if (-not (Test-Path $Exe)) {
+    Write-Host "dist\winui missing - publishing first..."
     & (Join-Path $PSScriptRoot "build-release.ps1")
 }
-if (-not (Test-Path $Widget)) { throw "dist\widget.exe missing" }
+if (-not (Test-Path $Exe)) { throw "dist\winui\Mawaqit Widget.exe missing" }
 
+$Dist = Join-Path $Root "dist"
 $Stage = Join-Path $Dist "portable-stage"
 if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
-Copy-Item -Force $Widget (Join-Path $Stage "widget.exe")
-$icon = Join-Path $Root "assets\icon.ico"
-if (Test-Path $icon) { Copy-Item -Force $icon (Join-Path $Stage "icon.ico") }
+Copy-Item -Recurse -Force (Join-Path $Winui "*") $Stage
 
 $portableDir = Join-Path $Root "installer\portable"
 Copy-Item -Force (Join-Path $portableDir "Install.bat") $Stage
 Copy-Item -Force (Join-Path $portableDir "Uninstall.bat") $Stage
 Copy-Item -Force (Join-Path $portableDir "README.txt") $Stage
+
+$icon = Join-Path $Root "assets\icon.ico"
+if (Test-Path $icon) { Copy-Item -Force $icon (Join-Path $Stage "icon.ico") }
 
 $ZipName = "MawaqitWidget-Portable-$Version.zip"
 $ZipPath = Join-Path $Dist $ZipName

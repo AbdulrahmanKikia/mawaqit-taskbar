@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "AbdulrahmanKikia/mawaqit-taskbar"
 $Api = "https://api.github.com/repos/$Repo/releases/latest"
 
-Write-Host "Mawaqit Widget — downloading latest release..."
+Write-Host "Mawaqit Widget - downloading latest release..."
 Write-Host ""
 
 try {

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version label for artifact names (e.g. 0.1.0). Ignored for tag builds."
+        description: "Version label for artifact names (e.g. 0.2.0). Ignored for tag builds."
         required: false
-        default: "0.1.0"
+        default: "0.2.0"
 
 permissions:
   contents: write
@@ -21,18 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
 
-      - name: Build widget (release)
-        run: cargo build --release --bin widget
-
-      - name: Stage dist\widget.exe
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item -Force target\release\widget.exe dist\widget.exe
-          Copy-Item -Force assets\icon.ico dist\icon.ico
+      - name: Publish WinUI host
+        run: .\scripts\build-release.ps1
 
       - name: Resolve version
         id: ver
@@ -42,9 +37,8 @@ jobs:
             $v = $Matches[1]
           } else {
             $v = "${{ github.event.inputs.version }}"
-            if (-not $v) { $v = "0.1.0" }
+            if (-not $v) { $v = "0.2.0" }
           }
-          # Keep Inno script version in sync for this build
           $iss = "installer\mawaqit-widget.iss"
           (Get-Content $iss -Raw) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$v`"" |
             Set-Content $iss -NoNewline
@@ -85,7 +79,7 @@ jobs:
 
             1. Download **MawaqitWidget-Setup-*.exe**
             2. Double-click it → Next → Finish
-            3. Look for the prayer strip above the taskbar (left)
+            3. Look for the prayer chip on the taskbar (next to the clock)
             4. Right-click → **Change mosque…** to pick your mosque
 
             If Windows SmartScreen warns you: **More info** → **Run anyway** (the installer is not code-signed yet).
@@ -93,6 +87,9 @@ jobs:
             Alternative: download the **Portable** zip, extract it, double-click **Install.bat**.
 
             ### Requirements
-            - Windows 10/11 (64-bit)
+            - Windows 11 (64-bit, build 22000+)
             - Internet
             - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (usually already on Windows 11)
+            - Windows App SDK 1.5 is **bundled** (self-contained unpackaged WinUI 3 host)
+
+            Taskbar inject host adapted from [Awqat Salaat](https://github.com/Khiro95/Awqat-Salaat) (MIT). Prayer data is Mawaqit, not a fork of Awqat's services.

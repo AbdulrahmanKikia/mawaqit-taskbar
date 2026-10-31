@@ -1,65 +1,42 @@
-# Build the AppBar widget (primary) and copy artifacts into dist/.
+# Publish the WinUI 3 taskbar host (self-contained WASDK) into dist\winui.
 # Usage (from repo root):
 #   .\scripts\build-release.ps1
+#
+# Requires: .NET 8 SDK. Windows 11 to run the result.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-Write-Host "Building release binaries (widget + mawaqit-widget)..."
-cargo build --release --bin widget --bin mawaqit-widget
-if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+$Project = Join-Path $Root "host-winui\Mawaqit.WinUI.csproj"
+$Out = Join-Path $Root "dist\winui"
 
-function Find-ReleaseExe([string]$Name) {
-    $candidates = @(
-        (Join-Path $Root "target\release\$Name"),
-        (Join-Path $env:CARGO_TARGET_DIR "release\$Name")
-    )
-    foreach ($c in $candidates) {
-        if ($c -and (Test-Path $c)) { return (Resolve-Path $c).Path }
-    }
-    $searchRoots = @($env:TEMP, "$env:LOCALAPPDATA\Temp")
-    foreach ($root in $searchRoots) {
-        if (-not (Test-Path $root)) { continue }
-        $hit = Get-ChildItem -Path $root -Recurse -Filter $Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "[\\/]release[\\/]$([regex]::Escape($Name))$" } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
-        if ($hit) { return $hit }
-    }
-    return $null
-}
-
-$widget = Find-ReleaseExe "widget.exe"
-if (-not $widget) { throw "Could not find built widget.exe" }
-
-$Dist = Join-Path $Root "dist"
-New-Item -ItemType Directory -Force -Path $Dist | Out-Null
-
-# Unlock dist binaries if a previous test instance is still running
-Get-Process -Name "widget","Mawaqit Widget","mawaqit-widget" -ErrorAction SilentlyContinue |
+Get-Process -Name "Mawaqit Widget","mawaqit-widget","widget" -ErrorAction SilentlyContinue |
     Stop-Process -Force
 Start-Sleep -Milliseconds 400
 
-Copy-Item -Force $widget (Join-Path $Dist "widget.exe")
+if (Test-Path $Out) { Remove-Item -Recurse -Force $Out }
+New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
+Write-Host "Publishing WinUI host (Release, win-x64, self-contained Windows App SDK 1.5)..."
+dotnet publish $Project `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    -p:Platform=x64 `
+    -p:WindowsAppSDKSelfContained=true `
+    -o $Out
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
-$egui = Find-ReleaseExe "mawaqit-widget.exe"
-if ($egui) {
-    Copy-Item -Force $egui (Join-Path $Dist "mawaqit-widget.exe")
-}
+$exe = Join-Path $Out "Mawaqit Widget.exe"
+if (-not (Test-Path $exe)) { throw "Publish did not produce Mawaqit Widget.exe" }
 
 $icon = Join-Path $Root "assets\icon.ico"
 if (Test-Path $icon) {
-    Copy-Item -Force $icon (Join-Path $Dist "icon.ico")
+    Copy-Item -Force $icon (Join-Path $Root "dist\icon.ico")
 }
 
 Write-Host ""
-Write-Host "Built:"
-Write-Host "  dist\widget.exe          <- primary AppBar widget (use this)"
-if ($egui) {
-    Write-Host "  dist\mawaqit-widget.exe  <- legacy egui UI"
-}
-Write-Host ""
+Write-Host "Built: $exe"
 Write-Host "Quick test:  .\scripts\run-widget.ps1"
 Write-Host "Install:     .\scripts\install.ps1"

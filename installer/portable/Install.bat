@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 title Install Mawaqit Widget
 
-:: Double-click this file to install. No Rust / PowerShell knowledge needed.
+:: Double-click this file to install. No programming knowledge needed.
 set "PRODUCT=Mawaqit Widget"
 set "SRC=%~dp0"
 set "DEST=%LOCALAPPDATA%\%PRODUCT%"
@@ -13,8 +13,8 @@ echo.
 echo  Installing %PRODUCT%...
 echo.
 
-if not exist "%SRC%widget.exe" (
-  echo  ERROR: widget.exe not found next to Install.bat
+if not exist "%SRC%%PRODUCT%.exe" (
+  echo  ERROR: %PRODUCT%.exe not found next to Install.bat
   echo  Download the portable zip from GitHub Releases and extract it first.
   echo.
   pause
@@ -26,9 +26,14 @@ taskkill /F /IM "Mawaqit Widget.exe" >nul 2>&1
 taskkill /F /IM widget.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
 
+if exist "%DEST%" rmdir /S /Q "%DEST%" >nul 2>&1
 mkdir "%DEST%" >nul 2>&1
-copy /Y "%SRC%widget.exe" "%EXE%" >nul
-if exist "%SRC%icon.ico" copy /Y "%SRC%icon.ico" "%DEST%\icon.ico" >nul
+robocopy "%SRC%." "%DEST%" /E /NFL /NDL /NJH /NJS /nc /ns /np >nul
+if errorlevel 8 (
+  echo  ERROR: failed to copy files to %DEST%
+  pause
+  exit /b 1
+)
 
 :: Start Menu shortcut
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -45,8 +50,9 @@ start "" "%EXE%"
 
 echo.
 echo  Done.
-echo  Look for a strip above the taskbar (left side).
+echo  Look for a chip on the taskbar (next to the clock).
 echo  Right-click it → Change mosque… to choose your mosque.
+echo  If nothing appears on the bar, use the tray icon.
 echo.
 pause
 endlocal

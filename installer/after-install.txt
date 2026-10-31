@@ -1,6 +1,8 @@
 Setup finished.
 
-If the prayer strip did not appear, open Start and launch "Mawaqit Widget".
+Look for the prayer chip on the taskbar next to the clock (or Widgets).
+If it did not appear, use the tray icon near the clock, or open Start
+and launch "Mawaqit Widget". Windows App SDK 1.5 is bundled.
 
 ------------------------------------------------
 Blocked by Windows? (error 4551 / Application Control)

@@ -2,10 +2,10 @@
 ; Compile with:  ISCC.exe installer\mawaqit-widget.iss
 ; Or:            .\scripts\build-installer.ps1
 ;
-; Expects release binary at dist\widget.exe (from build-release.ps1).
+; Expects the self-contained WinUI publish at dist\winui\ (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.1.8"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
@@ -33,6 +33,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.22000
 CloseApplications=yes
 RestartApplications=no
 InfoBeforeFile=welcome.txt
@@ -47,7 +48,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Name: "autostart"; Description: "Start with Windows"; GroupDescription: "Startup:"; Flags: checkedonce
 
 [Files]
-Source: "..\dist\widget.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
+Source: "..\dist\winui\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -125,7 +126,15 @@ end;
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
+  Version: TWindowsVersion;
 begin
+  GetWindowsVersionEx(Version);
+  if Version.Build < 22000 then
+  begin
+    MsgBox('Mawaqit Widget 0.2 requires Windows 11 (build 22000 or later).', mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
   // Stop a running instance so files can be replaced
   Exec('taskkill.exe', '/F /IM "Mawaqit Widget.exe"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM widget.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

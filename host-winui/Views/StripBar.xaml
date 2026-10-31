@@ -1,0 +1,19 @@
+<UserControl
+    x:Class="Mawaqit.WinUI.Views.StripBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Mawaqit.WinUI.Views"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+    BorderThickness="0,1,0,0">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <local:WidgetSummary x:Name="chip" MaxHeight="40" Margin="8,0,16,0" VerticalAlignment="Stretch"/>
+        <TextBlock x:Name="mosqueTb" Grid.Column="1" FontSize="13" FontWeight="SemiBold"
+                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                   TextTrimming="CharacterEllipsis" Margin="0,0,16,0"/>
+    </Grid>
+</UserControl>
