@@ -11,6 +11,7 @@ Windows 11 **taskbar prayer-times widget**. The chip is a WinUI 3 island **injec
 
 Requires **Windows 11** (build 22000+).
 
+**Site:** [abdulrahmankikia.github.io/mawaqit-taskbar](https://abdulrahmankikia.github.io/mawaqit-taskbar/) (download Setup.exe from there)  
 **How to use it:** [USER_GUIDE.md](USER_GUIDE.md) (chip vs strip, compact vs expanded, countdown, tray).
 
 ---
@@ -19,8 +20,9 @@ Requires **Windows 11** (build 22000+).
 
 ### Option A — Setup wizard (recommended)
 
-1. Open **[Releases](https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases)**
-2. Download **`MawaqitWidget-Setup-….exe`**
+1. Open the **[product site](https://abdulrahmankikia.github.io/mawaqit-taskbar/)** and click **Download Setup.exe**  
+   (or [Releases](https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases) for the same file)
+2. Save **`MawaqitWidget-Setup-….exe`**
 3. Double-click → **Next** → **Finish**
 4. Look for the prayer chip on the taskbar (next to the clock / Widgets)
 5. Right-click the chip → **Change mosque…** and choose your mosque

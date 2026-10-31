@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Mawaqit Widget — prayer times on the Windows 11 taskbar</title>
+  <meta name="description" content="A Windows 11 prayer-times chip in the taskbar, or a strip that reserves the bottom of the screen. Times from Mawaqit. MIT."/>
+  <meta property="og:title" content="Mawaqit Widget"/>
+  <meta property="og:description" content="Prayer times, on the bar you already look at."/>
+  <meta property="og:image" content="assets/icon.png"/>
+  <meta name="theme-color" content="#0c0f0e"/>
+  <link rel="icon" href="assets/favicon.ico"/>
+  <link rel="apple-touch-icon" href="assets/icon.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#download">Skip to download</a>
+
+  <header class="nav">
+    <a class="brand" href="#">
+      <img src="assets/icon.png" width="32" height="32" alt=""/>
+      Mawaqit Widget
+    </a>
+    <nav>
+      <a href="#live">See it</a>
+      <a href="#use">Use</a>
+      <a href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar">Source</a>
+      <a class="nav-dl" href="#download">Download</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">Windows 11 · times from Mawaqit</p>
+      <h1>The next prayer,<br>where your eyes already go.</h1>
+      <p class="lede">A chip inside the taskbar, or a strip that keeps windows off the bottom of the screen. Left-click the schedule. Right-click your mosque. MIT.</p>
+      <div class="cta">
+        <a id="btnSetup" class="btn primary" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">
+          Download Setup.exe
+        </a>
+        <a id="btnZip" class="btn ghost" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">
+          Portable zip
+        </a>
+      </div>
+      <p class="release" id="releaseMeta">Fetching the latest build…</p>
+    </section>
+
+    <section id="live" class="stage" aria-labelledby="live-title">
+      <div class="stage-head">
+        <h2 id="live-title">It lives on the bar.</h2>
+        <div class="switch" role="tablist" aria-label="Placement">
+          <button type="button" role="tab" id="tabInject" aria-selected="true" data-mode="inject">In the taskbar</button>
+          <button type="button" role="tab" id="tabStrip" aria-selected="false" data-mode="strip">Screen strip</button>
+        </div>
+      </div>
+
+      <div class="desktop" id="desktop" data-mode="inject">
+        <div class="workarea">
+          <div class="win" aria-hidden="true">
+            <div class="win-dots"><i></i><i></i><i></i></div>
+            <p>Maximized windows stop above the strip. Injected chips hide with the taskbar.</p>
+          </div>
+          <div class="flyout" id="flyout" hidden role="dialog" aria-label="Today’s schedule">
+            <header>
+              <strong>Fajr iqama in <span class="tick">—</span></strong>
+              <span>Your mosque · city</span>
+            </header>
+            <table>
+              <thead>
+                <tr><th></th><th>Prayer</th><th>Adhan</th><th>Iqama</th></tr>
+              </thead>
+              <tbody>
+                <tr class="tracked"><td>●</td><td>Fajr</td><td>04:52</td><td>05:12</td></tr>
+                <tr><td></td><td>Dhuhr</td><td>12:18</td><td>12:30</td></tr>
+                <tr><td></td><td>Asr</td><td>15:41</td><td>15:50</td></tr>
+                <tr><td></td><td>Maghrib</td><td>18:03</td><td>18:08</td></tr>
+                <tr><td></td><td>Isha</td><td>19:28</td><td>19:40</td></tr>
+              </tbody>
+            </table>
+            <p class="change">Change mosque…</p>
+          </div>
+        </div>
+        <div class="appstrip" id="mockStrip" hidden>
+          <button type="button" class="chip-face" id="stripChip" aria-label="Open schedule">Fajr iqama&nbsp;&nbsp;05:12&nbsp;&nbsp;·&nbsp;&nbsp;<span class="tick">—</span></button>
+          <span class="mosque">Your mosque · city</span>
+        </div>
+        <div class="taskbar">
+          <span class="start" aria-hidden="true"></span>
+          <span class="pins" aria-hidden="true"></span>
+          <button type="button" class="chip-face on-bar" id="barChip" aria-label="Open schedule">Fajr iqama&nbsp;&nbsp;05:12&nbsp;&nbsp;·&nbsp;&nbsp;<span class="tick">—</span></button>
+          <span class="tray" aria-hidden="true">9:41</span>
+        </div>
+      </div>
+      <p class="stage-note" id="stageNote">Expanded chip pins to the left of the taskbar. Compact is countdown only.</p>
+    </section>
+
+    <section id="use" class="use">
+      <article>
+        <h3>Left-click</h3>
+        <p>Today’s adhan and iqama. A dot marks the prayer the countdown is aimed at.</p>
+      </article>
+      <article>
+        <h3>Right-click</h3>
+        <p>Mosque, favorites (max 5), compact or expanded, countdown target, placement, hide, quit.</p>
+      </article>
+      <article>
+        <h3>Countdown</h3>
+        <p>Adhan. Iqama. Or adhan, then that prayer’s iqama, then the next adhan.</p>
+      </article>
+      <article>
+        <h3>Tray</h3>
+        <p>If the chip cannot sit on a packed bar, Show / Hide from the icon near the clock.</p>
+      </article>
+    </section>
+
+    <section id="download" class="download">
+      <h2>Install on Windows 11</h2>
+      <p class="lede">Unsigned build — if SmartScreen appears, More info → Run anyway. Right-click the downloaded Setup → Properties → Unblock if you see it.</p>
+      <div class="cta">
+        <a id="btnSetup2" class="btn primary" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">Download Setup.exe</a>
+        <a id="btnZip2" class="btn ghost" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">Portable zip</a>
+      </div>
+      <ul class="reqs">
+        <li>Windows 11, 64-bit, build 22000+</li>
+        <li>Internet</li>
+        <li>WebView2 (already on most PCs) for the mosque map</li>
+        <li>Windows App SDK 1.5 is bundled</li>
+      </ul>
+      <p class="guide-link"><a href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/blob/master/USER_GUIDE.md">User guide</a></p>
+    </section>
+  </main>
+
+  <footer>
+    <p>MIT. Times from <a href="https://mawaqit.net">Mawaqit</a>. Taskbar inject adapted from <a href="https://github.com/Khiro95/Awqat-Salaat">Awqat Salaat</a>.</p>
+    <p><a href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar">github.com/AbdulrahmanKikia/mawaqit-taskbar</a></p>
+  </footer>
+  <script src="site.js"></script>
+</body>
+</html>
