@@ -259,7 +259,12 @@ public sealed class MawaqitClient
         var parts = after.Split('/', StringSplitOptions.RemoveEmptyEntries);
         static bool Meta(string p) => p is "m" or "mobile" or "www" or "api" or "static"
             or "en" or "fr" or "ar" or "es" or "de" or "nl" or "tr" or "id" or "ur" or "bn" or "ru" or "zh" or "it" or "pt";
-        return parts.Reverse().FirstOrDefault(p => !Meta(p.ToLowerInvariant()));
+        for (int i = parts.Length - 1; i >= 0; i--)
+        {
+            if (!Meta(parts[i].ToLowerInvariant()))
+                return parts[i];
+        }
+        return null;
     }
 
     private static JsonSerializerOptions JsonOpt() => new()
