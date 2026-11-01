@@ -58,7 +58,11 @@ public class FlyoutEx : Flyout
         void Set()
         {
             _popup.RequestedTheme = ThemeHelper.GeneralTheme;
-            if (_presenter != null) _presenter.RequestedTheme = _popup.ActualTheme;
+            if (_presenter != null)
+            {
+                _presenter.RequestedTheme = _popup.ActualTheme;
+                LocaleManager.Default.ApplyFlow(_presenter);
+            }
         }
         if (DispatcherQueue.HasThreadAccess) Set();
         else DispatcherQueue.TryEnqueue(Set);

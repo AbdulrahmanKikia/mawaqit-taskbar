@@ -6,39 +6,56 @@
   <title>Find a mosque</title>
   <link rel="stylesheet" href="/leaflet.css" />
   <style>
-    :root {
-      --bg: #1c1c1c;
-      --panel: #2a2a2a;
-      --text: #f3f3f3;
-      --muted: #a0a0a0;
-      --accent: #ffcd60;
+    :root, html.theme-dark {
+      --bg: #202020;
+      --panel: #2c2c2c;
+      --text: #ffffff;
+      --muted: #9a9a9a;
+      --accent: #60cdff;
+      --accent-text: #003545;
       --line: #3a3a3a;
+      --hover: rgba(255,255,255,0.06);
+      --active: rgba(96,205,255,0.16);
+      --input: #1c1c1c;
+      --radius: 4px;
+    }
+    html.theme-light {
+      --bg: #f3f3f3;
+      --panel: #ffffff;
+      --text: #1a1a1a;
+      --muted: #5c5c5c;
+      --accent: #0078d4;
+      --accent-text: #ffffff;
+      --line: #e5e5e5;
+      --hover: rgba(0,0,0,0.04);
+      --active: rgba(0,120,212,0.12);
+      --input: #f9f9f9;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-      font: 14px/1.4 system-ui, Segoe UI, sans-serif; }
+      font: 14px/1.4 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
     #app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
-    #side { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
+    #side { display: flex; flex-direction: column; border-inline-end: 1px solid var(--line); background: var(--panel); min-height: 0; }
     #side header { padding: 14px 16px 8px; flex-shrink: 0; }
     #side header h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
     #side header p { margin: 0; color: var(--muted); font-size: 12px; }
     .search-row { display: flex; gap: 8px; padding: 8px 16px 8px; flex-shrink: 0; }
     .search-row input {
-      flex: 1; border: 1px solid var(--line); background: #1a1a1a; color: var(--text);
-      border-radius: 6px; padding: 8px 10px; outline: none;
+      flex: 1; border: 1px solid var(--line); background: var(--input); color: var(--text);
+      border-radius: var(--radius); padding: 8px 10px; outline: none;
     }
     .search-row input:focus { border-color: var(--accent); }
     .search-row button, #useBtn, #favBtn, #locBtn, #refreshBtn {
-      border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer;
-      background: var(--accent); color: #1a1200; font-weight: 600;
+      border: 0; border-radius: var(--radius); padding: 8px 12px; cursor: pointer;
+      background: var(--accent); color: var(--accent-text); font-weight: 600;
     }
-    #locBtn, #refreshBtn { background: #3a3a3a; color: var(--text); }
+    #locBtn, #refreshBtn { background: var(--hover); color: var(--text); border: 1px solid var(--line); }
     .actions { display: flex; gap: 8px; padding: 0 16px 8px; flex-shrink: 0; }
     .actions button { flex: 1; }
     #status { padding: 0 16px 8px; color: var(--muted); font-size: 12px; min-height: 18px; flex-shrink: 0; }
     #confirm {
       flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line); background: #242018;
+      border-bottom: 1px solid var(--line); background: var(--bg);
     }
     #confirm .picked { font-size: 12px; color: var(--muted); margin-bottom: 8px; min-height: 16px; }
     #confirm .picked strong { color: var(--text); font-weight: 600; }
@@ -47,39 +64,52 @@
     #useBtn:disabled, #favBtn:disabled { opacity: 0.4; cursor: not-allowed; }
     #list { flex: 1; overflow: auto; padding: 8px 8px 12px; min-height: 0; }
     .item {
-      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
-      color: var(--text); border-radius: 8px; padding: 10px; cursor: pointer; margin-bottom: 4px;
+      width: 100%; text-align: start; border: 1px solid transparent; background: transparent;
+      color: var(--text); border-radius: var(--radius); padding: 10px; cursor: pointer; margin-bottom: 4px;
     }
-    .item:hover { background: #333; }
-    .item.active { border-color: var(--accent); background: #3a3420; }
+    .item:hover { background: var(--hover); }
+    .item.active { border-color: var(--accent); background: var(--active); }
     .item .name { font-weight: 600; margin-bottom: 2px; }
     .item .meta { color: var(--muted); font-size: 12px; }
-    #map { height: 100%; background: #111; }
+    #map { height: 100%; background: var(--bg); }
     .name-tag {
       background: var(--accent);
-      color: #1a1200;
+      color: var(--accent-text);
       border: 0;
-      border-radius: 4px;
+      border-radius: var(--radius);
       padding: 2px 7px;
-      font: 600 11px/1.3 system-ui, Segoe UI, sans-serif;
+      font: 600 11px/1.3 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
       white-space: nowrap;
-      box-shadow: 0 1px 3px rgba(0,0,0,.45);
+      box-shadow: 0 1px 3px rgba(0,0,0,.25);
       pointer-events: auto;
       cursor: pointer;
     }
-    .name-tag.active { outline: 2px solid #fff; }
+    .name-tag.active { outline: 2px solid var(--text); }
     .leaflet-tooltip.name-tip {
       background: transparent; border: 0; box-shadow: none; padding: 0; margin: 0;
     }
     .leaflet-tooltip.name-tip::before { display: none; }
+    .leaflet-bar { border: 0 !important; box-shadow: none !important; }
+    .leaflet-control-zoom a {
+      background: var(--panel) !important;
+      color: var(--text) !important;
+      border: 1px solid var(--line) !important;
+      width: 32px !important; height: 32px !important; line-height: 32px !important;
+      border-radius: var(--radius) !important;
+    }
+    .leaflet-control-attribution {
+      background: var(--panel) !important;
+      color: var(--muted) !important;
+    }
+    .leaflet-control-attribution a { color: var(--accent) !important; }
   </style>
 </head>
 <body>
   <div id="app">
     <aside id="side">
       <header>
-        <h1>Find your mosque</h1>
-        <p>Click a name on the map or list. Double-click to use it.</p>
+        <h1 id="mapTitle">Find your mosque</h1>
+        <p id="mapHint">Click a name on the map or list. Double-click to use it.</p>
       </header>
       <div class="search-row">
         <input id="q" type="search" placeholder="Filter by name or city…" />

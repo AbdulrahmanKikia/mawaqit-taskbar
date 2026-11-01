@@ -14,6 +14,7 @@
         <local:WidgetSummary x:Name="chip" MaxHeight="40" Margin="8,0,16,0" VerticalAlignment="Stretch"/>
         <TextBlock x:Name="mosqueTb" Grid.Column="1" FontSize="13" FontWeight="SemiBold"
                    VerticalAlignment="Center" HorizontalAlignment="Right"
+                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                    TextTrimming="CharacterEllipsis" Margin="0,0,16,0"/>
     </Grid>
 </UserControl>

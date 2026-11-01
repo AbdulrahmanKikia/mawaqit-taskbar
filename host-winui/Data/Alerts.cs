@@ -16,21 +16,28 @@ public static class Alerts
         if (!prefs.Enabled) yield break;
         foreach (var slot in slots)
         {
-            if (!prefs.PrayerEnabled(slot.Label)) continue;
+            if (!prefs.PrayerEnabled(slot.Kind.ToString())) continue;
+            var loc = Helpers.LocaleManager.Default;
             var adhanAt = date + slot.Adhan;
             if (prefs.MinutesBefore > 0)
             {
                 var before = adhanAt - TimeSpan.FromMinutes(prefs.MinutesBefore);
                 if (Due(already, date, slot.Kind, "before", before, now, out var key))
-                    yield return new Alert(key, $"{slot.Label} in {prefs.MinutesBefore} min", $"Adhan at {slot.AdhanDisplay}.");
+                    yield return new Alert(key,
+                        string.Format(loc.Get("Alert.Before"), slot.Label, prefs.MinutesBefore),
+                        string.Format(loc.Get("Alert.BeforeBody"), slot.AdhanDisplay));
             }
             if (prefs.AtAdhan && Due(already, date, slot.Kind, "adhan", adhanAt, now, out var k2))
-                yield return new Alert(k2, $"It's time for {slot.Label}", $"Adhan {slot.AdhanDisplay}.");
+                yield return new Alert(k2,
+                    string.Format(loc.Get("Alert.Adhan"), slot.Label),
+                    string.Format(loc.Get("Alert.AdhanBody"), slot.AdhanDisplay));
             if (prefs.AtIqama && slot.Iqama is TimeSpan iq)
             {
                 var iqAt = date + iq;
                 if (Due(already, date, slot.Kind, "iqama", iqAt, now, out var k3))
-                    yield return new Alert(k3, $"{slot.Label} iqama", $"Iqama {slot.IqamaDisplay}.");
+                    yield return new Alert(k3,
+                        string.Format(loc.Get("Alert.Iqama"), slot.Label),
+                        string.Format(loc.Get("Alert.IqamaBody"), slot.IqamaDisplay));
             }
         }
     }

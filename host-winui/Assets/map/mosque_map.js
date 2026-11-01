@@ -12,6 +12,59 @@
   let moveTimer = null;
   let suppressMove = false;
   let map = null;
+  let i18n = {};
+
+  function t(key, fallback) {
+    return i18n[key] || fallback || key;
+  }
+
+  function fmt(key, fallback, value) {
+    return String(t(key, fallback)).replace('{0}', value);
+  }
+
+  function applyChromeStrings() {
+    const title = t('Map.Title', 'Find your mosque');
+    document.title = title;
+    const h1 = document.getElementById('mapTitle');
+    const hint = document.getElementById('mapHint');
+    if (h1) h1.textContent = title;
+    if (hint) hint.textContent = t('Map.Hint', 'Click a name on the map or list. Double-click to use it.');
+    const searchBtn = document.getElementById('searchBtn');
+    const locBtn = document.getElementById('locBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (searchBtn) searchBtn.textContent = t('Map.Filter', 'Filter');
+    if (qEl) qEl.placeholder = t('Map.Placeholder', 'Filter by name or city…');
+    if (locBtn) locBtn.textContent = t('Map.MyLocation', 'My location');
+    if (refreshBtn) refreshBtn.textContent = t('Map.Refresh', 'Refresh map');
+    if (useBtn) useBtn.textContent = t('Map.Use', 'Use selected');
+    if (favBtn) favBtn.textContent = t('Map.Favorite', 'Set as favorite');
+    paintPicked();
+  }
+
+  function paintPicked() {
+    if (selected) {
+      pickedLabel.innerHTML = t('Map.SelectedPrefix', 'Selected:') + ' <strong></strong>';
+      pickedLabel.querySelector('strong').textContent = displayName(selected);
+    } else {
+      pickedLabel.textContent = t('Map.None', 'No mosque selected');
+    }
+  }
+
+  window.__setLang = function (pack) {
+    i18n = pack || {};
+    const root = document.documentElement;
+    root.lang = i18n.lang || 'en';
+    root.dir = i18n.rtl === '1' ? 'rtl' : 'ltr';
+    applyChromeStrings();
+    if (mosques.length) {
+      setStatus(fmt('Map.Count', '{0} mosque name(s)', mosques.length));
+    }
+    if (map) {
+      try {
+        map.invalidateSize();
+      } catch (_) {}
+    }
+  };
 
   function applyIpcResult(res) {
     if (!res) return;
@@ -84,12 +137,7 @@
   function selectMosque(m, pan) {
     selected = m;
     setActionsEnabled(!!m);
-    if (m) {
-      pickedLabel.innerHTML = 'Selected: <strong></strong>';
-      pickedLabel.querySelector('strong').textContent = displayName(m);
-    } else {
-      pickedLabel.textContent = 'No mosque selected';
-    }
+    paintPicked();
     [...listEl.children].forEach((el) => {
       el.classList.toggle('active', m && el.dataset.slug === m.slug);
     });
@@ -131,16 +179,26 @@
     });
   }
 
+  function chromeColors() {
+    const s = getComputedStyle(document.documentElement);
+    return {
+      fill: (s.getPropertyValue('--accent') || '#0078d4').trim(),
+      stroke: (s.getPropertyValue('--accent-text') || '#ffffff').trim(),
+    };
+  }
+
   function renderMarkers() {
     clearMarkers();
+    if (!map) return;
+    const paint = chromeColors();
     const withCoords = mosques.filter((m) => m.lat != null && m.lon != null);
     withCoords.forEach((m) => {
       const name = displayName(m);
       const marker = L.circleMarker([m.lat, m.lon], {
         radius: 5,
-        color: '#1a1200',
+        color: paint.stroke,
         weight: 1,
-        fillColor: '#ffcd60',
+        fillColor: paint.fill,
         fillOpacity: 0.95,
       }).addTo(map);
       marker._mosqueSlug = m.slug;
@@ -165,14 +223,12 @@
     mosques = Array.isArray(list) ? list : [];
     selected = keepSlug ? mosques.find((m) => m.slug === keepSlug) || null : null;
     setActionsEnabled(!!selected);
-    if (selected) {
-      pickedLabel.innerHTML = 'Selected: <strong></strong>';
-      pickedLabel.querySelector('strong').textContent = displayName(selected);
-    } else {
-      pickedLabel.textContent = 'No mosque selected';
-    }
+    paintPicked();
     setStatus(
-      message || (mosques.length ? mosques.length + ' mosque name(s)' : 'No mosques in view')
+      message ||
+        (mosques.length
+          ? fmt('Map.Count', '{0} mosque name(s)', mosques.length)
+          : t('Map.NoneInView', 'No mosques in view'))
     );
     renderList();
     renderMarkers();
@@ -192,14 +248,23 @@
   };
 
   window.__setError = function (message) {
-    setStatus(message || 'Something went wrong');
+    setStatus(message || t('Map.Error', 'Something went wrong'));
+  };
+
+  window.__setChrome = function (accent, dark, accentText) {
+    const root = document.documentElement;
+    if (accent) root.style.setProperty('--accent', accent);
+    if (accentText) root.style.setProperty('--accent-text', accentText);
+    root.classList.toggle('theme-dark', !!dark);
+    root.classList.toggle('theme-light', !dark);
+    if (map) renderMarkers();
   };
 
   function requestNearby() {
     if (!map) return;
     const b = map.getBounds();
     const c = map.getCenter();
-    setStatus('Loading mosque names…');
+    setStatus(t('Map.Loading', 'Loading mosque names…'));
     ipc({
       type: 'nearby',
       lat: c.lat,
@@ -217,12 +282,12 @@
       requestNearby();
       return;
     }
-    setStatus('Matching “' + word + '” on Mawaqit…');
+    setStatus(fmt('Map.Matching', 'Matching “{0}” on Mawaqit…', word));
     ipc({ type: 'search', word: word });
   }
 
   function bootMap() {
-    setStatus('Map ready — loading mosque names…');
+    setStatus(t('Map.MapReady', 'Map ready — loading mosque names…'));
     map = L.map('map', { zoomControl: true }).setView([45.5017, -73.5673], 12);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -244,9 +309,9 @@
       if (e.key === 'Enter') requestSearch();
     });
     document.getElementById('locBtn').onclick = () => {
-      setStatus('Locating…');
+      setStatus(t('Map.Locating', 'Locating…'));
       if (!navigator.geolocation) {
-        setStatus('Geolocation unavailable — pan the map instead.');
+        setStatus(t('Map.GeoUnavailable', 'Geolocation unavailable — pan the map instead.'));
         requestNearby();
         return;
       }
@@ -260,7 +325,7 @@
           }, 300);
         },
         () => {
-          setStatus('Location denied — pan the map or filter by name.');
+          setStatus(t('Map.LocationDenied', 'Location denied — pan the map or filter by name.'));
           requestNearby();
         },
         { enableHighAccuracy: false, timeout: 8000 }
@@ -278,18 +343,18 @@
     }, 350);
   }
 
-  setStatus('Loading map library…');
+  setStatus(t('Map.LoadingLib', 'Loading map library…'));
   const s = document.createElement('script');
   s.src = '/leaflet.js';
   s.onload = function () {
     if (typeof L === 'undefined') {
-      setStatus('Map library loaded but Leaflet is missing.');
+      setStatus(t('Map.LeafletMissing', 'Map library loaded but Leaflet is missing.'));
       return;
     }
     bootMap();
   };
   s.onerror = function () {
-    setStatus('Could not load local map library.');
+    setStatus(t('Map.CouldNotLoad', 'Could not load local map library.'));
   };
   document.head.appendChild(s);
 })();

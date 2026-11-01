@@ -5,7 +5,7 @@ public enum PrayerKind { Fajr, Shuruq, Dhuhr, Asr, Maghrib, Isha }
 public sealed class PrayerSlot
 {
     public PrayerKind Kind { get; init; }
-    public string Label => Kind.ToString();
+    public string Label => Helpers.LocaleManager.Default.Prayer(Kind.ToString());
     public TimeSpan Adhan { get; init; }
     public string AdhanDisplay { get; init; } = "";
     public TimeSpan? Iqama { get; init; }

@@ -43,7 +43,7 @@ public partial class App : Application
         InitLogger();
         if (!Helpers.SystemInfos.IsWindows11_OrLater)
         {
-            MessageBox.Error("Mawaqit Widget 0.2 requires Windows 11 (build 22000 or later).");
+            MessageBox.Error(string.Format(LocaleManager.Default.Get("UI.RequiresWin11"), AppState.Version));
             Exit();
             return;
         }
@@ -52,7 +52,7 @@ public partial class App : Application
         _mutex = new Mutex(true, mutexId, out bool created);
         if (!created)
         {
-            MessageBox.Info("Mawaqit Widget is already running.");
+            MessageBox.Info(LocaleManager.Default.Get("UI.AlreadyRunning"));
             Exit();
             return;
         }
@@ -61,6 +61,7 @@ public partial class App : Application
         Autostart.Apply(AppState.Current.Config.StartWithWindows);
 
         var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        ThemeHelper.Initialize(dispatcher);
         try
         {
             TaskBarManager.Initialize(dispatcher);
@@ -69,7 +70,7 @@ public partial class App : Application
         {
             Log.Warning(ex, ex.Message);
             var result = MessageBox.Error(
-                ex.Message + "\n\nRetry, or Cancel to keep the tray icon only.",
+                string.Format(LocaleManager.Default.Get("UI.InjectRetry"), ex.Message),
                 Interop.MessageBoxButtons.MB_RETRYCANCEL);
             if (result == Interop.MessageBoxResult.IDRETRY)
             {
@@ -77,12 +78,12 @@ public partial class App : Application
                 catch (Exception retryEx)
                 {
                     Log.Warning(retryEx, "inject retry failed");
-                    MessageBox.Warning("Could not place the chip on the taskbar. Use the tray icon near the clock — Show will try again.");
+                    MessageBox.Warning(LocaleManager.Default.Get("UI.InjectFailed"));
                 }
             }
             else
             {
-                MessageBox.Info("The prayer chip is hidden. Use the tray icon near the clock to Show it later.");
+                MessageBox.Info(LocaleManager.Default.Get("UI.ChipHidden"));
             }
         }
 

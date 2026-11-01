@@ -70,6 +70,7 @@ public sealed class AppConfig
     public bool AutoAlignment { get; set; } = true;
     public ChipSize ChipSize { get; set; } = ChipSize.Expanded;
     public HostKind Host { get; set; } = HostKind.Injected;
+    public string Language { get; set; } = "system";
 
     public bool IsFavorite(string masjidId)
         => Favorites.Any(f => f.MasjidId == masjidId);
@@ -79,7 +80,7 @@ public sealed class AppConfig
         if (string.IsNullOrWhiteSpace(sel.MasjidId)) return null;
         if (IsFavorite(sel.MasjidId)) return null;
         if (Favorites.Count >= MaxFavorites)
-            return "You can keep 5 favorites. Remove one in Preferences first.";
+            return Helpers.LocaleManager.Default.Get("UI.FavoritesFull");
         Favorites.Add(sel);
         return null;
     }
@@ -146,6 +147,7 @@ internal static class AppConfigStore
         cfg.ChipSize = ParseChipSize(model);
         cfg.Host = ParseHost(model);
         cfg.Countdown = ParseCountdown(Str(model, "countdown", "adhan"));
+        cfg.Language = Str(model, "language", "system");
 
         if (model.TryGetValue("mosque", out var mosqueObj) && mosqueObj is TomlTable mt)
             cfg.Mosque = ReadMosque(mt);
@@ -195,6 +197,7 @@ internal static class AppConfigStore
         sb.AppendLine($"auto_alignment = {cfg.AutoAlignment.ToString().ToLowerInvariant()}");
         sb.AppendLine($"chip_size = \"{cfg.ChipSize.ToString().ToLowerInvariant()}\"");
         sb.AppendLine($"host = \"{cfg.Host.ToString().ToLowerInvariant()}\"");
+        sb.AppendLine($"language = \"{Esc(cfg.Language)}\"");
         if (cfg.Mosque is { } m)
         {
             sb.AppendLine();

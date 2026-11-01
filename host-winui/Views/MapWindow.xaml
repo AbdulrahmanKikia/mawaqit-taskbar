@@ -4,6 +4,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls">
     <Grid>
-        <controls:WebView2 x:Name="web"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid x:Name="AppTitleBar" Padding="16,0,140,0">
+            <TextBlock x:Name="titleBarTb" VerticalAlignment="Center"
+                       Style="{StaticResource CaptionTextBlockStyle}"/>
+        </Grid>
+        <controls:WebView2 x:Name="web" Grid.Row="1"/>
     </Grid>
 </Window>

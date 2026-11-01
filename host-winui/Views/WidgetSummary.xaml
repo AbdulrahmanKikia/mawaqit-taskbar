@@ -37,7 +37,7 @@
     <Grid>
         <controls:ToggleButtonEx
             x:Name="toggle"
-            Padding="4,0"
+            Padding="8,0"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
             HorizontalContentAlignment="Stretch"
@@ -60,10 +60,11 @@
                     <Flyout.FlyoutPresenterStyle>
                         <Style TargetType="FlyoutPresenter" BasedOn="{StaticResource DefaultFlyoutPresenterStyle}">
                             <Setter Property="Padding" Value="0"/>
-                            <Setter Property="MaxWidth" Value="420"/>
+                            <Setter Property="MaxWidth" Value="240"/>
+                            <Setter Property="CornerRadius" Value="8"/>
                         </Style>
                     </Flyout.FlyoutPresenterStyle>
-                    <local:WidgetPanel x:Name="panel" MinWidth="260"/>
+                    <local:WidgetPanel x:Name="panel"/>
                 </controls:FlyoutEx>
             </FlyoutBase.AttachedFlyout>
         </controls:ToggleButtonEx>

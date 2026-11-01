@@ -43,7 +43,7 @@ public sealed class MawaqitClient
         _apiBase = apiBase.TrimEnd('/');
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.TryAddWithoutValidation(
-            "User-Agent", "MawaqitWidget/0.2 (Windows; +https://mawaqit.net) Mozilla/5.0");
+            "User-Agent", "MawaqitWidget/0.4 (Windows; +https://mawaqit.net) Mozilla/5.0");
     }
 
     public async Task<(PrayerTimes Times, IqamaTimes Iqama)> FetchDayAsync(string masjidId, DateTime date, CancellationToken ct = default)

@@ -19,7 +19,7 @@ public sealed class PrayerRow
 
 public sealed class AppState : INotifyPropertyChanged
 {
-    public const string Version = "0.2.0";
+    public const string Version = "0.4.0";
     public const string Repo = "AbdulrahmanKikia/mawaqit-taskbar";
 
     public static AppState Current { get; } = new();
@@ -53,7 +53,7 @@ public sealed class AppState : INotifyPropertyChanged
     public string ChipLine => Config.ChipSize == ChipSize.Compact
         ? ChipCountdown
         : $"{ChipName}  {ChipTime}  ·  {ChipCountdown}";
-    public string MosqueLabel => Config.Mosque?.DisplayName ?? "No mosque selected";
+    public string MosqueLabel => Config.Mosque?.DisplayName ?? LocaleManager.Default.Get("UI.NoMosque");
     public string TrackingLabel { get; private set; } = "";
     public string NextHeadline { get; private set; } = "";
     public string Status { get; private set; } = "loading";
@@ -90,6 +90,7 @@ public sealed class AppState : INotifyPropertyChanged
     public void Load()
     {
         Config = AppConfigStore.Load();
+        LocaleManager.Default.Apply(Config.Language);
         _client = new MawaqitClient(Config.ApiBaseUrl);
         _lastDisplayMode = ChipLayout.ToDisplayMode(Config.ChipSize);
     }
@@ -126,6 +127,16 @@ public sealed class AppState : INotifyPropertyChanged
         TaskBarManager.SwitchHost(kind);
     }
 
+    public void ApplyLanguage(string preference)
+    {
+        var next = LocaleManager.Normalize(preference);
+        Config.Language = next;
+        Persist();
+        LocaleManager.Default.Apply(next);
+        _slotsFingerprint = "";
+        Tick();
+    }
+
     public void Start()
     {
         _dispatcher = DispatcherQueue.GetForCurrentThread();
@@ -146,7 +157,7 @@ public sealed class AppState : INotifyPropertyChanged
         if (favorite)
         {
             var err = Config.AddFavorite(new MosqueSelection { MasjidId = slug, DisplayName = label });
-            if (err != null) MessageBox.Warning(err);
+            if (err != null) _ = AppDialog.ShowAsync(LocaleManager.Default.Get("UI.Favorites"), err);
         }
         Persist();
         await RefreshAsync(force: true);
@@ -229,17 +240,19 @@ public sealed class AppState : INotifyPropertyChanged
             time = "";
             countdown = "--";
             tracking = "";
-            headline = "No upcoming prayer";
+            headline = LocaleManager.Default.Get("UI.NoUpcoming");
             near = false;
         }
         else
         {
-            var phase = next.ToIqama ? "iqama" : "adhan";
-            name = next.ToIqama ? $"{next.Kind} iqama" : next.Kind.ToString();
+            var loc = LocaleManager.Default;
+            var prayer = loc.Prayer(next.Kind.ToString());
+            var phase = next.ToIqama ? loc.Get("UI.Iqama") : loc.Get("UI.Adhan");
+            name = next.ToIqama ? $"{prayer} {phase}" : prayer;
             time = Schedule.FormatHhmm(next.At.TimeOfDay);
             countdown = Schedule.FormatCountdown(next.Remaining);
-            tracking = $"Tracking {next.Kind} {phase}";
-            headline = $"Next: {next.Kind} at {time}";
+            tracking = $"{prayer} {phase}";
+            headline = $"{prayer} · {time}";
             near = next.Remaining.TotalMinutes <= Config.Notifications.MinutesBefore
                    && Config.Notifications.MinutesBefore > 0;
         }
@@ -266,7 +279,7 @@ public sealed class AppState : INotifyPropertyChanged
     private void RebuildRows(NextPrayer? next)
     {
         var fp = string.Join('|', _today.Select(s => $"{s.Kind}:{s.AdhanDisplay}:{s.IqamaDisplay}"))
-                 + $":{next?.Kind}:{next?.ToIqama}";
+                 + $":{next?.Kind}:{next?.ToIqama}:{LocaleManager.Default.Resolved}";
         if (fp == _slotsFingerprint) return;
         _slotsFingerprint = fp;
         Slots.Clear();

@@ -510,6 +510,7 @@ namespace Mawaqit.WinUI
 
         private static void UpdateTrayIconLocalization()
         {
+            if (trayIcon is null) return;
             trayIcon.UpdateToolTip(LocaleManager.Default.Get("Data.AppName"));
             showItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Show");
             hideItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Hide");
@@ -518,9 +519,9 @@ namespace Mawaqit.WinUI
             displaySubMenu.Text = LocaleManager.Default.Get("UI.ContextMenu.Display");
             primaryItem.Text = LocaleManager.Default.Get("UI.ContextMenu.AlwaysPrimary");
             quitItem.Text = LocaleManager.Default.Get("UI.ContextMenu.Quit");
-            if (placementSubMenu != null) placementSubMenu.Text = "Placement";
-            if (injectedItem != null) injectedItem.Text = "In the taskbar";
-            if (stripItem != null) stripItem.Text = "Screen strip";
+            if (placementSubMenu != null) placementSubMenu.Text = LocaleManager.Default.Get("UI.Placement");
+            if (injectedItem != null) injectedItem.Text = LocaleManager.Default.Get("UI.InTaskbar");
+            if (stripItem != null) stripItem.Text = LocaleManager.Default.Get("UI.ScreenStrip");
             UpdatePlacementTrayMenus();
 
             trayIcon.ContextMenu.RightToLeft = LocaleManager.Default.CurrentCulture.TextInfo.IsRightToLeft;

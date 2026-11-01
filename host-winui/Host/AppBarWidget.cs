@@ -32,6 +32,7 @@ internal class AppBarWidget : IWidgetHost
     private bool initialized;
     private bool destroyed;
     private bool disposedValue;
+    private SolidColorBrush? _fill;
 
     public IntPtr Handle => hwnd != IntPtr.Zero ? hwnd : throw new InvalidOperationException("The strip is not initialized.");
     public string DisplayPath => displayPath;
@@ -61,6 +62,7 @@ internal class AppBarWidget : IWidgetHost
         stripBar = new StripBar();
         stripBar.DisplayModeChanged += _ => ApplyChipSize(AppState.Current.Config.ChipSize);
         var fill = new SolidColorBrush(StripFillColor());
+        _fill = fill;
         stripBar.Background = fill;
         host.Content = new Grid
         {
@@ -69,6 +71,7 @@ internal class AppBarWidget : IWidgetHost
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Stretch,
             Children = { stripBar }
         };
+        ThemeHelper.ThemeChanged += ApplyStripTheme;
 
         RegisterAppBar();
         PositionAppBar();
@@ -192,9 +195,29 @@ internal class AppBarWidget : IWidgetHost
             lpParam: IntPtr.Zero);
     }
 
-    private static Windows.UI.Color StripFillColor()
+    private void ApplyStripTheme()
     {
-        return SystemInfos.IsAppsLightThemeUsed() == true
+        void Set()
+        {
+            var c = StripFillColor();
+            if (_fill != null) _fill.Color = c;
+            if (stripBar != null) stripBar.Background = _fill;
+            if (host?.Content is Grid g) g.Background = _fill;
+        }
+        var q = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        if (q is null || q.HasThreadAccess) Set();
+        else q.TryEnqueue(Set);
+    }
+
+    internal static Windows.UI.Color StripFillColor()
+    {
+        if (SystemInfos.IsAccentColorOnTaskBar() == true)
+        {
+            var (r, g, b, a) = SystemInfos.GetAccentColor();
+            if (a > 0 && (r | g | b) != 0)
+                return Windows.UI.Color.FromArgb(255, r, g, b);
+        }
+        return SystemInfos.IsLightThemeUsed() == true
             ? Windows.UI.Color.FromArgb(255, 243, 243, 243)
             : Windows.UI.Color.FromArgb(255, 32, 32, 32);
     }
@@ -234,6 +257,7 @@ internal class AppBarWidget : IWidgetHost
         if (disposedValue) return;
         if (disposing)
         {
+            ThemeHelper.ThemeChanged -= ApplyStripTheme;
             RemoveAppBar();
             if (!destroyed) appWindow?.Destroy();
             host?.Dispose();
