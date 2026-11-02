@@ -20,7 +20,7 @@ public sealed class PrayerRow
 
 public sealed class AppState : INotifyPropertyChanged
 {
-    public const string Version = "0.4.0";
+    public const string Version = "0.5.0";
     public const string Repo = "AbdulrahmanKikia/mawaqit-taskbar";
 
     /// <summary>Times are re-read this often so mosque edits (iqama changes) show up.</summary>
