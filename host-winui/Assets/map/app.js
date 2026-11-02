@@ -13,6 +13,11 @@
   let suppressMove = false;
   let map = null;
   let i18n = {};
+  // Replies to older nearby/search requests are ignored so fast panning cannot show stale results.
+  let seq = 0;
+  let mode = 'mosque';
+  let pendingView = null;
+  let loadingMore = false;
 
   function t(key, fallback) {
     return i18n[key] || fallback || key;
@@ -38,13 +43,41 @@
     if (refreshBtn) refreshBtn.textContent = t('Map.Refresh', 'Refresh map');
     if (useBtn) useBtn.textContent = t('Map.Use', 'Use selected');
     if (favBtn) favBtn.textContent = t('Map.Favorite', 'Set as favorite');
+    setText('legendMawaqit', t('Map.LegendMawaqit', 'Mosque timetable'));
+    setText('legendOsm', t('Map.LegendOsm', 'Calculated times'));
+    setText('spotBtn', t('Map.UsePin', 'Use the pin as my location'));
+    if (mode === 'location') {
+      document.title = t('Map.LocationTitle', 'Set your location');
+      setText('mapTitle', t('Map.LocationTitle', 'Set your location'));
+      setText('mapHint', t('Map.LocationHint', 'Move the map until the pin is where you pray.'));
+    }
     paintPicked();
   }
 
+  function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  function isOsm(m) {
+    return m && m.provider === 'osm';
+  }
+
   function paintPicked() {
+    const note = document.getElementById('pickedNote');
+    if (note) {
+      note.textContent = isOsm(selected)
+        ? t('Map.OsmNote', 'Not on Mawaqit: adhan times are calculated for this mosque, and you can add its iqama in Preferences.')
+        : '';
+    }
+    if (mode === 'location') {
+      pickedLabel.textContent = t('Map.LocationHint', 'Move the map until the pin is where you pray.');
+      return;
+    }
     if (selected) {
-      pickedLabel.innerHTML = t('Map.SelectedPrefix', 'Selected:') + ' <strong></strong>';
-      pickedLabel.querySelector('strong').textContent = displayName(selected);
+      const strong = document.createElement('strong');
+      strong.textContent = displayName(selected);
+      pickedLabel.replaceChildren(t('Map.SelectedPrefix', 'Selected:') + ' ', strong);
     } else {
       pickedLabel.textContent = t('Map.None', 'No mosque selected');
     }
@@ -73,8 +106,10 @@
     } else if (res.error) {
       window.__setError(res.error);
     } else if (res.ok === 'selected') {
-      document.body.innerHTML =
-        '<p style="padding:24px;font:16px/1.4 system-ui">Mosque saved. You can close this tab.</p>';
+      const p = document.createElement('p');
+      p.style.cssText = 'padding:24px;font:16px/1.4 system-ui';
+      p.textContent = 'Mosque saved. You can close this tab.';
+      document.body.replaceChildren(p);
     }
   }
 
@@ -106,14 +141,6 @@
     return (m.label || m.slug || '').split(' — ')[0];
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   function clearMarkers() {
     markers.forEach((m) => map.removeLayer(m));
     markers = [];
@@ -131,6 +158,10 @@
       slug: selected.slug,
       label: selected.label,
       favorite: !!favorite,
+      lat: selected.lat,
+      lon: selected.lon,
+      provider: selected.provider || 'mawaqit',
+      website: selected.website || undefined,
     });
   }
 
@@ -165,8 +196,11 @@
       btn.type = 'button';
       btn.className = 'item' + (selected && selected.slug === m.slug ? ' active' : '');
       btn.dataset.slug = m.slug;
-      btn.innerHTML = '<div class="name"></div><div class="meta"></div>';
+      btn.innerHTML = '<div class="name"></div><span class="badge"></span><div class="meta"></div>';
       btn.querySelector('.name').textContent = displayName(m);
+      const badge = btn.querySelector('.badge');
+      badge.classList.add(isOsm(m) ? 'osm' : 'mawaqit');
+      badge.textContent = isOsm(m) ? t('Map.BadgeOsm', 'Calculated') : t('Map.BadgeMawaqit', 'Timetable');
       btn.querySelector('.meta').textContent = m.label.includes(' — ')
         ? m.label.split(' — ').slice(1).join(' — ')
         : m.slug || '';
@@ -182,8 +216,9 @@
   function chromeColors() {
     const s = getComputedStyle(document.documentElement);
     return {
-      fill: (s.getPropertyValue('--accent') || '#0078d4').trim(),
-      stroke: (s.getPropertyValue('--accent-text') || '#ffffff').trim(),
+      primary: (s.getPropertyValue('--primary') || '#1f5fd6').trim(),
+      highlight: (s.getPropertyValue('--highlight') || '#2f74f0').trim(),
+      panel: (s.getPropertyValue('--panel') || '#ffffff').trim(),
     };
   }
 
@@ -194,15 +229,19 @@
     const withCoords = mosques.filter((m) => m.lat != null && m.lon != null);
     withCoords.forEach((m) => {
       const name = displayName(m);
+      const osm = isOsm(m);
       const marker = L.circleMarker([m.lat, m.lon], {
-        radius: 5,
-        color: paint.stroke,
-        weight: 1,
-        fillColor: paint.fill,
-        fillOpacity: 0.95,
+        radius: osm ? 5 : 6,
+        color: osm ? paint.highlight : paint.panel,
+        weight: 2,
+        fillColor: osm ? paint.panel : paint.primary,
+        fillOpacity: 1,
       }).addTo(map);
       marker._mosqueSlug = m.slug;
-      marker.bindTooltip('<span class="name-tag">' + escapeHtml(name) + '</span>', {
+      const tag = document.createElement('span');
+      tag.className = 'name-tag' + (osm ? ' osm' : '');
+      tag.textContent = name;
+      marker.bindTooltip(tag, {
         permanent: true,
         direction: 'top',
         offset: [0, -6],
@@ -218,18 +257,15 @@
     });
   }
 
-  window.__setMosques = function (list, message, fit) {
+  window.__setMosques = function (list, message, fit, replySeq, moreComing) {
+    if (replySeq && replySeq !== seq) return;
+    loadingMore = !!moreComing;
     const keepSlug = selected && selected.slug;
     mosques = Array.isArray(list) ? list : [];
     selected = keepSlug ? mosques.find((m) => m.slug === keepSlug) || null : null;
     setActionsEnabled(!!selected);
     paintPicked();
-    setStatus(
-      message ||
-        (mosques.length
-          ? fmt('Map.Count', '{0} mosque name(s)', mosques.length)
-          : t('Map.NoneInView', 'No mosques in view'))
-    );
+    showCount(message);
     renderList();
     renderMarkers();
     if (fit && map) {
@@ -247,26 +283,65 @@
     }
   };
 
-  window.__setError = function (message) {
+  function showCount(message) {
+    let text = message ||
+      (mosques.length ? fmt('Map.Count', '{0} mosque name(s)', mosques.length) : t('Map.NoneInView', 'No mosques in view'));
+    if (loadingMore) text += ' · ' + t('Map.LoadingMore', 'looking for more…');
+    setStatus(text);
+  }
+
+  // OpenStreetMap mosques for the same request, added after the Mawaqit list is on screen.
+  window.__addMosques = function (list, replySeq) {
+    if (replySeq && replySeq !== seq) return;
+    loadingMore = false;
+    const known = new Set(mosques.map((m) => m.slug));
+    (Array.isArray(list) ? list : []).forEach((m) => {
+      if (!known.has(m.slug)) mosques.push(m);
+    });
+    showCount('');
+    renderList();
+    renderMarkers();
+  };
+
+  window.__setError = function (message, replySeq) {
+    if (replySeq && replySeq !== seq) return;
     setStatus(message || t('Map.Error', 'Something went wrong'));
   };
 
-  window.__setChrome = function (accent, dark, accentText) {
+  // The map keeps the app's blue palette; only light/dark follows Windows.
+  window.__setChrome = function (_accent, dark) {
     const root = document.documentElement;
-    if (accent) root.style.setProperty('--accent', accent);
-    if (accentText) root.style.setProperty('--accent-text', accentText);
     root.classList.toggle('theme-dark', !!dark);
     root.classList.toggle('theme-light', !dark);
     if (map) renderMarkers();
   };
 
+  window.__setMode = function (next, lat, lon) {
+    mode = next === 'location' ? 'location' : 'mosque';
+    document.body.classList.toggle('mode-location', mode === 'location');
+    if (typeof lat === 'number' && typeof lon === 'number') {
+      if (map) {
+        suppressMove = true;
+        map.setView([lat, lon], mode === 'location' ? 12 : 13);
+        setTimeout(() => {
+          suppressMove = false;
+          if (mode === 'mosque') requestNearby();
+        }, 300);
+      } else {
+        pendingView = [lat, lon];
+      }
+    }
+    applyChromeStrings();
+  };
+
   function requestNearby() {
-    if (!map) return;
+    if (!map || mode === 'location') return;
     const b = map.getBounds();
     const c = map.getCenter();
     setStatus(t('Map.Loading', 'Loading mosque names…'));
     ipc({
       type: 'nearby',
+      seq: ++seq,
       lat: c.lat,
       lon: c.lng,
       north: b.getNorth(),
@@ -283,12 +358,12 @@
       return;
     }
     setStatus(fmt('Map.Matching', 'Matching “{0}” on Mawaqit…', word));
-    ipc({ type: 'search', word: word });
+    ipc({ type: 'search', word: word, seq: ++seq });
   }
 
   function bootMap() {
     setStatus(t('Map.MapReady', 'Map ready — loading mosque names…'));
-    map = L.map('map', { zoomControl: true }).setView([45.5017, -73.5673], 12);
+    map = L.map('map', { zoomControl: true }).setView(pendingView || [45.5017, -73.5673], 12);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap',
@@ -332,6 +407,10 @@
       );
     };
     useBtn.onclick = () => confirmSelection(false);
+    document.getElementById('spotBtn').onclick = () => {
+      const c = map.getCenter();
+      ipc({ type: 'location', lat: c.lat, lon: c.lng, label: '' });
+    };
     if (favBtn) favBtn.onclick = () => confirmSelection(true);
 
     ipc({ type: 'ready' });

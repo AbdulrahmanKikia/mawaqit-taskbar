@@ -28,7 +28,13 @@
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
     <Content Include="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\icon.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\map\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\core\Mawaqit.Core.csproj" />
+    <Using Include="Mawaqit.Core" />
   </ItemGroup>
 
   <ItemGroup>

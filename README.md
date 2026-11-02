@@ -7,7 +7,10 @@ Windows 11 **taskbar prayer-times widget**. The chip is a WinUI 3 island **injec
 | **Taskbar chip** | Next prayer, countdown (compact: countdown only) |
 | **Left-click** | Today’s adhan / iqama flyout |
 | **Right-click / tray** | Change mosque, Favorites, Preferences, Hide, Re-position, Quit |
-| **Mosque picker** | Interactive map of Mawaqit mosque names |
+| **Mosque picker** | Map of Mawaqit mosques **plus OpenStreetMap mosques** (e.g. Brampton, which Mawaqit does not cover) |
+| **Prayer times for where you are** | Offline calculation (22 methods, Hanafi/standard Asr, high-latitude rules), following Windows location; *Automatic* switches to it when you are 50+ km from your mosque |
+| **Offline** | The mosque's whole year (adhan + iqama) is saved; times keep working without internet |
+| **Qibla direction** | Offline compass, sun guide, and the yearly "shadow days" |
 
 Requires **Windows 11** (build 22000+).
 
@@ -65,7 +68,7 @@ irm https://raw.githubusercontent.com/AbdulrahmanKikia/mawaqit-taskbar/master/sc
 ### Requirements
 
 - Windows 11 (64-bit), build 22000 or later
-- Internet connection
+- Internet for the first run (to pick a mosque); prayer times and Qibla then work offline
 - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) — usually already installed on Windows 11
 - **Windows App SDK 1.5 is bundled** in the installer and portable zip (self-contained unpackaged WinUI 3). You do not install WASDK separately.
 
@@ -106,21 +109,52 @@ dotnet publish host-winui\Mawaqit.WinUI.csproj -c Release -r win-x64 --self-cont
 
 The Rust `widget` crate remains as the Mawaqit HTTP protocol reference; it is **not** the 0.2 UI.
 
-Tag a version to publish installers via GitHub Actions:
+### Tests and house rules
+
+```powershell
+dotnet test tests\Mawaqit.Tests\Mawaqit.Tests.csproj
+```
+
+`tests/Mawaqit.Tests/Architecture/RulesTests.cs` enforces the house rules on every CI run, and each failure says how to fix it:
+
+- `core/` has no UI or Windows API references, so it stays testable.
+- HTTP clients come only from `Http.Create` (identified User-Agent, timeout).
+- Every message from the map page is parsed by `MapIpc.Parse`; the host calls the page only through `CallJs` (JSON-encoded arguments).
+- Shipped JavaScript has no `eval`, no `innerHTML` built from data, no HTML-string tooltips.
+- Only the updater starts a process, and only after the installer's SHA-256 matches the release.
+- App files are written with `AtomicFile` (no half-written config); no empty `catch` in data code; no unsafe deserializers.
+- Secret scan over every tracked and new file (no `.env` except `.env.example`, no signing keys, no provider tokens).
+- Version is identical in the csproj, `AppState`, and the installer; the toast app id matches the installer shortcut; every string exists in English, French and Arabic.
+
+Fix the code rather than adding allowlist entries. `release.yml` runs the same tests before publishing and refuses a tag that does not match the app version.
+
+Tag a version to publish installers via GitHub Actions (bump `<Version>` in the csproj, `AppState.Version`, and `MyAppVersion` in the installer first):
 
 ```powershell
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-### Optional local API
+### Where times come from
 
-Default config may point at `http://127.0.0.1:8000`. Not required for map pick + page scrape.
+Preferences → **Prayer times** → *Times from*:
+
+| Choice | Times |
+|--------|-------|
+| **My mosque** (default) | The mosque's Mawaqit timetable. Mosques that are only on OpenStreetMap get adhan calculated for their location, plus the iqama you type in. |
+| **Where I am** | Calculated offline for your location (Windows location services, or a pin on the map). |
+| **Automatic** | Your mosque when you are within 50 km of it, otherwise where you are. |
+
+Calculation is the PrayTimes algorithm (`core/Calculation/PrayerCalculator.cs`). It matches api.aladhan.com within a minute for Fajr, sunrise, Dhuhr, Maghrib and Isha (15 cities × 5 dates in `tests/Mawaqit.Tests/Fixtures/aladhan-reference.json`). Asr is checked against the exact shadow-length definition instead, because Aladhan's Asr drifts by up to 5 minutes at high latitudes. Our ISNA results match Masjid Al-Hadi's (Toronto) own calendar exactly on all 365 days for Fajr, Shuruq, Dhuhr, Maghrib and Isha (`dotnet run --project tools/Mawaqit.Probe -- --compare masjid-al-hadi-toronto Isna`).
+
+For Mawaqit mosques the widget reads the mosque's public page on mawaqit.net once and keeps its yearly `calendar` / `iqamaCalendar`. Before trusting the year, it checks it against the times Mawaqit publishes for "today"; rows that fail validation (e.g. Fajr after sunrise) are skipped and logged, never guessed. Each published sunrise is also compared with the astronomical one, which flags typos (Birmingham's calendar lists 05:00 for 05:50 on 24 April) and misconfigured mosque time zones in the log. See `core/Timetable/ConfData.cs` and the real-data fixtures in `tests/Mawaqit.Tests/Fixtures/`.
+
+The WinUI host no longer calls the optional local API (`docker compose up -d`, `scripts/run-api.ps1`); those remain for the legacy Rust build only. `api_base_url` stays in `config.toml` for compatibility.
+
+Spot-check real mosques with the same parser the app ships:
 
 ```powershell
-docker compose up -d
-# or
-.\scripts\run-api.ps1
+dotnet run --project tools/Mawaqit.Probe -- assahaba-mtl quba-islamic-cultural-centre-birmingham-b7-4ny-united-kingdom
 ```
 
 ### Config paths
@@ -129,20 +163,25 @@ docker compose up -d
 |------|---------|
 | `%LOCALAPPDATA%\Mawaqit Widget\` | Installed app (self-contained WinUI + WASDK) |
 | `%APPDATA%\Mawaqit\Mawaqit Widget\config.toml` | Mosque + settings (same schema as v0.1.8) |
-| `%LOCALAPPDATA%\Mawaqit\Mawaqit Widget\cache\cache.json` | Day cache |
+| `%LOCALAPPDATA%\Mawaqit\Mawaqit Widget\cache\<mosque>.json` | Saved yearly timetable (offline) |
+| `%LOCALAPPDATA%\Mawaqit\Mawaqit Widget\webview2\` | Map browser profile |
 | `%LOCALAPPDATA%\Mawaqit\Mawaqit Widget\logs\` | Serilog files |
 
-v0.2 keeps the same `config.toml` schema as v0.1.8 (favorites, countdown, notifications).
+`config.toml` keeps the v0.1.8 schema (favorites, countdown, notifications) and adds optional `lat` / `lon` per mosque for the Qibla. A file that cannot be read is moved aside as `config.toml.broken-<time>` and the app starts with defaults.
 
 ### Project layout
 
 ```
 host-winui/     Unpackaged WinUI 3 host (0.2 UI) — SetParent into Shell_TrayWnd
+core/           Pure, tested logic: Mawaqit parsing, schedule, alerts, config, cache, Qibla
+tests/          Unit tests + Architecture/RulesTests.cs (house rules, run in CI)
+tools/          Mawaqit.Probe — check real mosque pages with the shipped parser
 installer/      Inno Setup script + portable Install.bat
 scripts/        publish / package / install helpers
 src/            Rust protocol reference (not shipped as the 0.2 UI)
 assets/         Icons, mosque map, Leaflet
-.github/workflows/release.yml   Builds Setup.exe + portable zip
+.github/workflows/ci.yml        Tests + app build on every push / PR
+.github/workflows/release.yml   Tests, then builds Setup.exe + portable zip + SHA-256 files
 ```
 
 ### Troubleshooting

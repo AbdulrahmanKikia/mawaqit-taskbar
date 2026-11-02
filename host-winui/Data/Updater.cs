@@ -1,61 +1,73 @@
 using System.Net.Http;
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using Serilog;
 
 namespace Mawaqit.WinUI.Data;
 
-public sealed record LatestRelease(string Version, string SetupName, string SetupUrl);
+public sealed record LatestRelease(string Version, string SetupName, string SetupUrl, string? Sha256, string? Sha256Url);
+
+public sealed class UpdateVerificationException(string message) : Exception(message);
 
 internal static class Updater
 {
     public static async Task<LatestRelease> FetchLatestAsync(CancellationToken ct = default)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", $"MawaqitWidget/{AppState.Version}");
-        var url = $"https://api.github.com/repos/{AppState.Repo}/releases/latest";
-        using var resp = await http.GetAsync(url, ct);
+        using var http = Http.Create(TimeSpan.FromSeconds(30));
+        using var resp = await http.GetAsync($"https://api.github.com/repos/{AppState.Repo}/releases/latest", ct);
         resp.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        var tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
-        var version = tag.Trim().TrimStart('v');
-        string? name = null, setupUrl = null;
-        foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+        var version = (doc.RootElement.GetProperty("tag_name").GetString() ?? "").Trim().TrimStart('v');
+        string? name = null, url = null, digest = null, sumUrl = null;
+        var assets = doc.RootElement.GetProperty("assets").EnumerateArray().ToList();
+        foreach (var asset in assets)
         {
             var n = asset.GetProperty("name").GetString() ?? "";
-            if (n.StartsWith("MawaqitWidget-Setup-", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".exe"))
+            if (n.StartsWith("MawaqitWidget-Setup-", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             {
                 name = n;
-                setupUrl = asset.GetProperty("browser_download_url").GetString();
+                url = asset.GetProperty("browser_download_url").GetString();
+                digest = asset.TryGetProperty("digest", out var d) ? ReleaseCheck.ParseSha256(d.GetString()) : null;
                 break;
             }
         }
-        if (name is null || setupUrl is null)
+        if (name is null || url is null)
             throw new InvalidOperationException("Latest release has no Setup.exe asset");
-        return new LatestRelease(version, name, setupUrl);
-    }
-
-    public static bool IsNewer(string remote, string local)
-        => Tuple(remote).CompareTo(Tuple(local)) > 0;
-
-    private static (ulong, ulong, ulong) Tuple(string v)
-    {
-        var parts = v.Trim().TrimStart('v').Split('.');
-        ulong Next(int i)
+        foreach (var asset in assets)
         {
-            if (i >= parts.Length) return 0;
-            var digits = new string(parts[i].TakeWhile(char.IsDigit).ToArray());
-            return ulong.TryParse(digits, out var n) ? n : 0;
+            if (asset.GetProperty("name").GetString() == name + ".sha256")
+                sumUrl = asset.GetProperty("browser_download_url").GetString();
         }
-        return (Next(0), Next(1), Next(2));
+        return new LatestRelease(version, name, url, digest, sumUrl);
     }
 
-    public static async Task DownloadAsync(string url, string dest, CancellationToken ct = default)
+    public static bool IsNewer(string remote, string local) => ReleaseCheck.IsNewer(remote, local);
+
+    /// <summary>Downloads the installer, checks its SHA-256 against the release, and only
+    /// then starts it. A missing or wrong checksum means nothing is run.</summary>
+    public static async Task DownloadVerifyAndLaunchAsync(LatestRelease release, CancellationToken ct = default)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", $"MawaqitWidget/{AppState.Version}");
-        using var resp = await http.GetAsync(url, ct);
-        resp.EnsureSuccessStatusCode();
-        await using var fs = File.Create(dest);
-        await resp.Content.CopyToAsync(fs, ct);
+        using var http = Http.Create(TimeSpan.FromMinutes(5));
+        var expected = release.Sha256;
+        if (expected is null && release.Sha256Url is { } sumUrl)
+            expected = ReleaseCheck.ParseSha256(await http.GetStringAsync(sumUrl, ct));
+        if (expected is null)
+            throw new UpdateVerificationException("The release has no checksum, so the installer was not run.");
+
+        var dest = Path.Combine(Path.GetTempPath(), $"{Path.GetFileNameWithoutExtension(release.SetupName)}-{Guid.NewGuid():N}.exe");
+        using (var resp = await http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+        {
+            resp.EnsureSuccessStatusCode();
+            await using var fs = new FileStream(dest, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            await resp.Content.CopyToAsync(fs, ct);
+            fs.Position = 0;
+            if (!ReleaseCheck.MatchesSha256(fs, expected))
+            {
+                fs.Close();
+                File.Delete(dest);
+                throw new UpdateVerificationException("The downloaded installer did not match the release checksum and was deleted.");
+            }
+        }
+        Log.Information("Update {Version} verified (sha256 {Hash}); starting installer", release.Version, expected);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dest) { UseShellExecute = true });
     }
 }

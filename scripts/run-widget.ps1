@@ -1,4 +1,4 @@
-# Launch the WinUI taskbar widget from dist\winui (publishes if missing).
+# Rebuild the WinUI taskbar widget into dist\winui and launch it.
 # Usage (from repo root):
 #   .\scripts\run-widget.ps1
 
@@ -7,14 +7,11 @@ $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 $Exe = Join-Path $Root "dist\winui\Mawaqit Widget.exe"
-if (-not (Test-Path $Exe)) {
-    Write-Host "Published host not found - building..."
-    & (Join-Path $PSScriptRoot "build-release.ps1")
-}
 
-Get-Process -Name "Mawaqit Widget","mawaqit-widget","widget" -ErrorAction SilentlyContinue |
-    Stop-Process -Force
-Start-Sleep -Milliseconds 400
+# Always rebuild: launching an old dist\ build hides every change made since.
+# (build-release.ps1 also stops a running widget first.)
+Write-Host "Building the latest code..."
+& (Join-Path $PSScriptRoot "build-release.ps1")
 
 Write-Host "Starting $Exe"
 Start-Process -FilePath $Exe -WorkingDirectory (Split-Path $Exe)

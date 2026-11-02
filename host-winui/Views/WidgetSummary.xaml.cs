@@ -99,7 +99,7 @@ public sealed partial class WidgetSummary : UserControl
         if (st.HasError)
             toggle.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
         else if (st.IsNear)
-            toggle.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"];
+            toggle.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["BrandHighlightBrush"];
         else
             toggle.ClearValue(Control.ForegroundProperty);
         RaiseMode();
@@ -136,6 +136,7 @@ public sealed partial class WidgetSummary : UserControl
             menu.Items.Add(Item(sel.DisplayName, () => _ = AppState.Current.SwitchFavoriteAsync(sel)));
         }
         menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(Item(loc.Get("UI.Qibla"), QiblaWindow.Show));
         menu.Items.Add(Item(loc.Get("UI.Preferences"), SettingsWindow.Show));
 
         var sizeMenu = new MenuFlyoutSubItem { Text = loc.Get("UI.ContextMenu.ChipSize") };

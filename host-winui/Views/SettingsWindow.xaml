@@ -35,6 +35,64 @@
                     <Button x:Name="changeMosqueBtn" Click="Mosque_Click"/>
                 </controls:SettingsCard>
 
+                <!-- Where prayer times come from: mosque timetable, or calculated for a place. -->
+                <controls:SettingsExpander x:Name="timesExp" IsExpanded="True">
+                    <controls:SettingsExpander.HeaderIcon>
+                        <FontIcon Glyph="&#xE823;"/>
+                    </controls:SettingsExpander.HeaderIcon>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Name="timesSourceCard">
+                            <ComboBox x:Name="timesSource" MinWidth="280" SelectionChanged="Times_Changed">
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                            </ComboBox>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="locationCard">
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <ToggleSwitch x:Name="locationAuto" Toggled="TimesToggle_Changed"/>
+                                <Button x:Name="pickLocationBtn" Click="PickLocation_Click"/>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="locationOffCard" Visibility="Collapsed">
+                            <HyperlinkButton x:Name="locationSettingsLink" Click="LocationSettings_Click"/>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="methodCard">
+                            <ComboBox x:Name="methodBox" MinWidth="280" MaxWidth="340" SelectionChanged="Times_Changed"/>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="asrCard">
+                            <ComboBox x:Name="asrBox" MinWidth="220" SelectionChanged="Times_Changed">
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                            </ComboBox>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="highLatCard">
+                            <ComboBox x:Name="highLatBox" MinWidth="220" SelectionChanged="Times_Changed">
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                                <ComboBoxItem/>
+                            </ComboBox>
+                        </controls:SettingsCard>
+                        <!-- Only for mosques that are not on Mawaqit: the user types their iqama. -->
+                        <controls:SettingsCard x:Name="iqamaCard" Visibility="Collapsed">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBox x:Name="iqFajr" Width="76" PlaceholderText="+20"/>
+                                    <TextBox x:Name="iqDhuhr" Width="76" PlaceholderText="13:30"/>
+                                    <TextBox x:Name="iqAsr" Width="76" PlaceholderText="+10"/>
+                                    <TextBox x:Name="iqMaghrib" Width="76" PlaceholderText="+5"/>
+                                    <TextBox x:Name="iqIsha" Width="76" PlaceholderText="+10"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button x:Name="saveIqamaBtn" Click="SaveIqama_Click" Style="{StaticResource AccentButtonStyle}"/>
+                                    <HyperlinkButton x:Name="websiteLink" Click="Website_Click" Visibility="Collapsed"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
                 <controls:SettingsExpander x:Name="countdownExp">
                     <controls:SettingsExpander.HeaderIcon>
                         <FontIcon Glyph="&#xE916;"/>

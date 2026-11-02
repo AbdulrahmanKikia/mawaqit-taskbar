@@ -1,28 +1,9 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using Serilog;
 
 namespace Mawaqit.WinUI.Data;
-
-public sealed class PrayerTimes
-{
-    public string Fajr { get; set; } = "";
-    public string Sunrise { get; set; } = "";
-    public string Dohr { get; set; } = "";
-    public string Asr { get; set; } = "";
-    public string Maghreb { get; set; } = "";
-    public string Icha { get; set; } = "";
-}
-
-public sealed class IqamaTimes
-{
-    public string Fajr { get; set; } = "";
-    public string Dohr { get; set; } = "";
-    public string Asr { get; set; } = "";
-    public string Maghreb { get; set; } = "";
-    public string Icha { get; set; } = "";
-}
 
 public sealed class MosqueHit
 {
@@ -30,91 +11,48 @@ public sealed class MosqueHit
     public string Label { get; set; } = "";
     public double? Lat { get; set; }
     public double? Lon { get; set; }
+    public MosqueProvider Provider { get; set; } = MosqueProvider.Mawaqit;
+    public string? Website { get; set; }
 }
 
 public sealed class MawaqitClient
 {
-    private readonly HttpClient _http;
-    private readonly string _apiBase;
+    private readonly HttpClient _http = Http.Create(TimeSpan.FromSeconds(30));
     private readonly Dictionary<string, List<MosqueHit>> _countryCache = new();
+    private readonly Dictionary<(double, double), string> _reverseCache = new();
+    private readonly SemaphoreSlim _nominatimGate = new(1, 1);
+    private DateTime _lastNominatimCall = DateTime.MinValue;
 
-    public MawaqitClient(string apiBase)
+    /// <summary>One page fetch gives the whole year of adhan + iqama times.</summary>
+    public async Task<(MosqueTimetable Table, ParseReport Report)> FetchTimetableAsync(string slug, CancellationToken ct = default)
     {
-        _apiBase = apiBase.TrimEnd('/');
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        _http.DefaultRequestHeaders.TryAddWithoutValidation(
-            "User-Agent", "MawaqitWidget/0.4 (Windows; +https://mawaqit.net) Mozilla/5.0");
+        var conf = await FetchConfDataAsync(slug, ct);
+        var (table, report) = ConfData.Parse(slug, conf, DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+        Log.Information("Timetable {Slug}: {Days} days, {Iqama} iqama days, calendar trusted {Trusted}, live times = {Matched}",
+            slug, report.DaysAccepted, report.IqamaDaysAccepted, report.CalendarTrusted, report.LiveTimesMatched);
+        foreach (var skip in report.Skipped.Take(20))
+            Log.Warning("Timetable {Slug} skipped {Reason}", slug, skip);
+        foreach (var odd in report.Suspicious.Take(10))
+            Log.Warning("Timetable {Slug} suspicious {Reason}", slug, odd);
+        if (report.Skipped.Count > 20)
+            Log.Warning("Timetable {Slug}: {More} more skipped entries", slug, report.Skipped.Count - 20);
+        return (table, report);
     }
 
-    public async Task<(PrayerTimes Times, IqamaTimes Iqama)> FetchDayAsync(string masjidId, DateTime date, CancellationToken ct = default)
+    private async Task<System.Text.Json.Nodes.JsonObject> FetchConfDataAsync(string slug, CancellationToken ct)
     {
-        PrayerTimes times;
-        try { times = await PrayerTimesViaApiAsync(masjidId, ct); }
-        catch
-        {
-            times = await TimesFromPageAsync(masjidId, ct);
-        }
-        var iqama = await IqamaForDayAsync(masjidId, date.Month, date.Day, ct);
-        return (times, iqama);
-    }
-
-    private async Task<PrayerTimes> PrayerTimesViaApiAsync(string masjidId, CancellationToken ct)
-    {
-        var url = $"{_apiBase}/api/v1/{Uri.EscapeDataString(masjidId)}/prayer-times";
-        using var resp = await _http.GetAsync(url, ct);
-        resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync(ct);
-        return JsonSerializer.Deserialize<PrayerTimes>(json, JsonOpt())
-               ?? throw new InvalidOperationException("empty prayer times");
-    }
-
-    private async Task<IqamaTimes> IqamaForDayAsync(string masjidId, int month, int day, CancellationToken ct)
-    {
-        try
-        {
-            var url = $"{_apiBase}/api/v1/{Uri.EscapeDataString(masjidId)}/calendar-iqama/{month}";
-            using var resp = await _http.GetAsync(url, ct);
-            resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadAsStringAsync(ct);
-            var rows = JsonSerializer.Deserialize<List<IqamaTimes>>(json, JsonOpt()) ?? new();
-            var idx = Math.Max(0, day - 1);
-            if (idx < rows.Count && HasIqama(rows[idx])) return rows[idx];
-        }
-        catch { /* fall through to page */ }
-        return await IqamaFromPageAsync(masjidId, month, day, ct);
-    }
-
-    private async Task<JsonNode> FetchConfDataAsync(string slug, CancellationToken ct)
-    {
+        if (!MosqueSlug.IsValid(slug)) throw new InvalidOperationException($"'{slug}' is not a Mawaqit mosque id.");
         foreach (var lang in new[] { "en", "fr", "ar" })
         {
-            var url = $"https://mawaqit.net/{lang}/{slug}";
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://mawaqit.net/{lang}/{slug}");
             req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
             using var resp = await _http.SendAsync(req, ct);
             if ((int)resp.StatusCode == 404) continue;
             resp.EnsureSuccessStatusCode();
             var html = await resp.Content.ReadAsStringAsync(ct);
-            var conf = ExtractConfData(html);
-            if (conf != null) return conf;
+            if (ConfData.Extract(html) is { } conf) return conf;
         }
-        throw new InvalidOperationException("page not found or confData missing");
-    }
-
-    private async Task<PrayerTimes> TimesFromPageAsync(string slug, CancellationToken ct)
-    {
-        var conf = await FetchConfDataAsync(slug, ct);
-        return TimesFromConf(conf) ?? throw new InvalidOperationException("Could not read today's prayer times.");
-    }
-
-    private async Task<IqamaTimes> IqamaFromPageAsync(string slug, int month, int day, CancellationToken ct)
-    {
-        try
-        {
-            var conf = await FetchConfDataAsync(slug, ct);
-            return IqamaFromConf(conf, month, day) ?? new IqamaTimes();
-        }
-        catch { return new IqamaTimes(); }
+        throw new InvalidOperationException("Mosque page not found, or it has no timetable.");
     }
 
     public async Task<string> ResolveNameAsync(string slug, CancellationToken ct = default)
@@ -123,47 +61,211 @@ public sealed class MawaqitClient
         return conf["name"]?.GetValue<string>() ?? slug;
     }
 
-    public async Task<List<MosqueHit>> SearchInViewAsync(double lat, double lon, double? north, double? south, double? east, double? west, CancellationToken ct = default)
+    /// <summary>Mawaqit mosques in view (fast). OpenStreetMap ones come separately via <see cref="OsmInViewAsync"/>.</summary>
+    public async Task<List<MosqueHit>> SearchInViewAsync(double lat, double lon, GeoBounds? bounds, CancellationToken ct = default)
     {
         var cc = await CountryCodeAtAsync(lat, lon, ct);
+        if (cc is null) return new();
         var country = await MosquesByCountryAsync(cc, ct);
-        if (north is double n && south is double s && east is double e && west is double w)
-        {
-            var inView = country.Where(h =>
-                h.Lat is double la && h.Lon is double lo &&
-                la <= n && la >= s && lo <= e && lo >= w).ToList();
-            if (inView.Count > 0)
-            {
-                inView.Sort((a, b) => Haversine(lat, lon, a).CompareTo(Haversine(lat, lon, b)));
-                return inView.Take(60).ToList();
-            }
-        }
-        return Nearest(country, lat, lon, 40);
+        var hits = bounds is { } b ? InBounds(country, b) : Nearest(country, lat, lon, 40);
+        hits.Sort((x, y) => Distance(lat, lon, x).CompareTo(Distance(lat, lon, y)));
+        return hits.Take(80).ToList();
     }
+
+    /// <summary>OpenStreetMap mosques in view that are not already in <paramref name="mawaqit"/>.</summary>
+    public async Task<List<MosqueHit>> OsmInViewAsync(GeoBounds bounds, IReadOnlyList<MosqueHit> mawaqit, CancellationToken ct = default)
+        => WithoutDuplicates(mawaqit, InBounds(await OsmMosquesAsync(bounds, ct), bounds));
 
     public async Task<List<MosqueHit>> SearchMosquesAsync(string word, CancellationToken ct = default)
     {
         word = word.Trim();
         if (word.Length == 0) return new();
-        if (ExtractSlugFromUrl(word) is string fromUrl)
+        if (MosqueSlug.FromUrl(word) is string fromUrl)
         {
             var name = await ResolveNameAsync(fromUrl, ct);
             return new() { new MosqueHit { Slug = fromUrl, Label = name } };
         }
+        if (await GeocodeAsync(word, ct) is not { } g) return new();
+        var country = await MosquesByCountryAsync(g.cc, ct);
+        var around = new GeoBounds(g.lat + 0.2, g.lat - 0.2, g.lon + 0.3, g.lon - 0.3);
+        var mawaqit = InBounds(country, around);
+        var all = mawaqit.Concat(WithoutDuplicates(mawaqit, InBounds(await OsmMosquesAsync(around, ct), around))).ToList();
+        var hits = Filter(Filter(country, word).Concat(all).DistinctBy(h => h.Slug).ToList(), word);
+        return hits.Count > 0 ? hits : Nearest(all.Count > 0 ? all : country, g.lat, g.lon, 30);
+    }
+
+    /// <summary>Best effort: a town or city name for a point, for labels like "Brampton".</summary>
+    public async Task<string?> PlaceNameAsync(GeoPoint at, CancellationToken ct = default)
+    {
+        var url = string.Create(CultureInfo.InvariantCulture,
+            $"https://nominatim.openstreetmap.org/reverse?lat={at.Latitude}&lon={at.Longitude}&format=json&zoom=10");
+        using var doc = await NominatimAsync(url, ct);
+        if (doc?.RootElement.TryGetProperty("address", out var a) != true) return null;
+        foreach (var key in new[] { "city", "town", "village", "municipality", "county", "state" })
+            if (a.TryGetProperty(key, out var v) && v.GetString() is { Length: > 0 } name) return name;
+        return null;
+    }
+
+    // ---- OpenStreetMap mosques ---------------------------------------------------------
+
+    private sealed record OsmArea(double South, double West, double North, double East, bool Complete, DateTimeOffset SavedAt, List<MosqueHit> Hits)
+    {
+        public bool Covers(GeoBounds b) => South <= b.South && West <= b.West && North >= b.North && East >= b.East;
+        /// <summary>Overpass results stay good for a month; keyword fallbacks are retried the next day.</summary>
+        public bool Fresh(DateTimeOffset now) => now - SavedAt < (Complete ? TimeSpan.FromDays(30) : TimeSpan.FromDays(1));
+    }
+
+    private static readonly string[] OverpassServers =
+    [
+        "https://overpass-api.de/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    ];
+
+    /// <summary>Names Nominatim can find mosques by when Overpass is down.</summary>
+    private static readonly string[] MosqueWords = ["mosque", "masjid", "islamic", "jame", "musalla"];
+
+    private List<OsmArea>? _osmAreas;
+    private readonly SemaphoreSlim _osmGate = new(1, 1);
+    private static string OsmCachePath => Path.Combine(AppConfigStore.CacheDir, "osm-mosques.json");
+
+    /// <summary>
+    /// OpenStreetMap mosques around a city-sized box: from the disk cache when we have the area,
+    /// else Overpass (complete), else Nominatim keyword search (partial). Never throws: this
+    /// layer is extra coverage and must not hold up the Mawaqit results.
+    /// </summary>
+    private async Task<List<MosqueHit>> OsmMosquesAsync(GeoBounds view, CancellationToken ct)
+    {
+        if (view.North - view.South > 1.2 || view.East - view.West > 1.8) return new(); // country views: too big
+        await _osmGate.WaitAsync(ct);
         try
         {
-            var geo = await GeocodeAsync(word, ct);
-            if (geo is { } g)
+            var areas = _osmAreas ??= LoadOsmAreas();
+            var now = DateTimeOffset.UtcNow;
+            if (areas.FirstOrDefault(a => a.Covers(view) && a.Fresh(now)) is { } hit) return hit.Hits;
+
+            // Fetch a slightly larger, grid-snapped area so small pans hit the cache.
+            var area = new GeoBounds(
+                Math.Ceiling((view.North + 0.05) * 10) / 10, Math.Floor((view.South - 0.05) * 10) / 10,
+                Math.Ceiling((view.East + 0.05) * 10) / 10, Math.Floor((view.West - 0.05) * 10) / 10);
+            var (hits, complete) = await OverpassAsync(area, ct) is { } full ? (full, true) : (await NominatimMosquesAsync(area, ct), false);
+            if (hits.Count == 0 && !complete) return hits;
+
+            areas.RemoveAll(a => !a.Fresh(now) || (complete && area.South <= a.South && area.West <= a.West && area.North >= a.North && area.East >= a.East));
+            areas.Add(new OsmArea(area.South, area.West, area.North, area.East, complete, now, hits));
+            if (areas.Count > 60) areas.RemoveRange(0, areas.Count - 60);
+            AtomicFile.WriteAllText(OsmCachePath, JsonSerializer.Serialize(areas));
+            return hits;
+        }
+        finally
+        {
+            _osmGate.Release();
+        }
+    }
+
+    private static List<OsmArea> LoadOsmAreas()
+    {
+        try
+        {
+            return File.Exists(OsmCachePath)
+                ? JsonSerializer.Deserialize<List<OsmArea>>(File.ReadAllText(OsmCachePath)) ?? new()
+                : new();
+        }
+        catch (JsonException ex)
+        {
+            Log.Warning(ex, "Ignoring unreadable OpenStreetMap cache");
+            return new();
+        }
+    }
+
+    private async Task<List<MosqueHit>?> OverpassAsync(GeoBounds b, CancellationToken ct)
+    {
+        var query = string.Create(CultureInfo.InvariantCulture,
+            $"[out:json][timeout:10];nwr[\"amenity\"=\"place_of_worship\"][\"religion\"=\"muslim\"]({b.South},{b.West},{b.North},{b.East});out center tags 400;");
+        foreach (var server in OverpassServers)
+        {
+            try
             {
-                var country = await MosquesByCountryAsync(g.cc, ct);
-                var hits = Filter(country, word);
-                if (hits.Count == 0) hits = Nearest(country, g.lat, g.lon, 30);
-                if (hits.Count > 0) return hits;
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(12));
+                using var req = new HttpRequestMessage(HttpMethod.Post, server)
+                {
+                    Content = new FormUrlEncodedContent([new KeyValuePair<string, string>("data", query)])
+                };
+                using var resp = await _http.SendAsync(req, cts.Token);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Log.Information("Overpass {Server} returned {Status}", server, (int)resp.StatusCode);
+                    continue;
+                }
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+                var hits = new List<MosqueHit>();
+                foreach (var e in doc.RootElement.GetProperty("elements").EnumerateArray())
+                {
+                    if (!e.TryGetProperty("tags", out var tags) || Prop(tags, "name") is not { Length: > 0 } name) continue;
+                    var center = e.TryGetProperty("center", out var c) ? c : e;
+                    if (!center.TryGetProperty("lat", out var la) || !center.TryGetProperty("lon", out var lo)) continue;
+                    hits.Add(OsmHit(e.GetProperty("type").GetString(), e.GetProperty("id").GetInt64(), name,
+                        Prop(tags, "addr:city"), la.GetDouble(), lo.GetDouble(), Prop(tags, "website") ?? Prop(tags, "contact:website")));
+                }
+                return hits;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException)
+            {
+                if (ct.IsCancellationRequested) throw;
+                Log.Information("Overpass {Server} failed: {Message}", server, ex.Message);
             }
         }
-        catch { /* ignore */ }
-        return new();
+        return null;
     }
+
+    private async Task<List<MosqueHit>> NominatimMosquesAsync(GeoBounds b, CancellationToken ct)
+    {
+        var hits = new Dictionary<string, MosqueHit>();
+        foreach (var word in MosqueWords)
+        {
+            var url = string.Create(CultureInfo.InvariantCulture,
+                $"https://nominatim.openstreetmap.org/search?q={word}&viewbox={b.West},{b.North},{b.East},{b.South}&bounded=1&limit=50&format=jsonv2&addressdetails=1&extratags=1");
+            using var doc = await NominatimAsync(url, ct);
+            if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Array) continue;
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                if (Prop(e, "type") != "place_of_worship" || Prop(e, "name") is not { Length: > 0 } name) continue;
+                var hasLat = double.TryParse(Prop(e, "lat"), NumberStyles.Float, CultureInfo.InvariantCulture, out var la);
+                var hasLon = double.TryParse(Prop(e, "lon"), NumberStyles.Float, CultureInfo.InvariantCulture, out var lo);
+                if (!hasLat || !hasLon || !e.TryGetProperty("osm_id", out var id)) continue;
+                var city = e.TryGetProperty("address", out var a) ? Prop(a, "city") ?? Prop(a, "town") : null;
+                var site = e.TryGetProperty("extratags", out var x) && x.ValueKind == JsonValueKind.Object ? Prop(x, "website") : null;
+                var hit = OsmHit(Prop(e, "osm_type"), id.GetInt64(), name, city, la, lo, site);
+                hits.TryAdd(hit.Slug, hit);
+            }
+        }
+        Log.Information("Overpass unavailable; found {Count} mosques via Nominatim keywords", hits.Count);
+        return hits.Values.ToList();
+    }
+
+    private static MosqueHit OsmHit(string? osmType, long id, string name, string? city, double lat, double lon, string? website) => new()
+    {
+        Slug = $"osm-{osmType switch { "node" => "n", "way" => "w", _ => "r" }}{id}",
+        Label = string.IsNullOrEmpty(city) ? name : $"{name} — {city}",
+        Lat = lat,
+        Lon = lon,
+        Provider = MosqueProvider.OpenStreetMap,
+        Website = Uri.TryCreate(website, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? u.ToString() : null,
+    };
+
+    private static string? Prop(JsonElement e, string name)
+        => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static List<MosqueHit> InBounds(IEnumerable<MosqueHit> hits, GeoBounds b)
+        => hits.Where(h => h.Lat is double la && h.Lon is double lo &&
+                           la <= b.North && la >= b.South && lo <= b.East && lo >= b.West).ToList();
+
+    /// <summary>OpenStreetMap entries minus those that are a Mawaqit mosque already (within 150 m).</summary>
+    private static List<MosqueHit> WithoutDuplicates(IReadOnlyList<MosqueHit> mawaqit, IEnumerable<MosqueHit> osm)
+        => osm.Where(o => !mawaqit.Any(m => m.Lat is { } la && m.Lon is { } lo && o.Lat is { } ola && o.Lon is { } olo
+                                            && Qibla.GreatCircleKm(la, lo, ola, olo) < 0.15))
+              .DistinctBy(o => o.Slug)
+              .ToList();
 
     public async Task<List<MosqueHit>> MosquesByCountryAsync(string countryCode, CancellationToken ct)
     {
@@ -172,8 +274,7 @@ public sealed class MawaqitClient
         {
             if (_countryCache.TryGetValue(code, out var cached)) return cached;
         }
-        var url = $"https://mawaqit.net/api/2.0/mosque/map/{code}";
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"https://mawaqit.net/api/2.0/mosque/map/{Uri.EscapeDataString(code)}");
         req.Headers.TryAddWithoutValidation("Accept", "application/json");
         req.Headers.TryAddWithoutValidation("Referer", "https://mawaqit.net/");
         req.Headers.TryAddWithoutValidation("Origin", "https://mawaqit.net");
@@ -184,7 +285,7 @@ public sealed class MawaqitClient
         foreach (var item in doc.RootElement.EnumerateArray())
         {
             var slug = item.TryGetProperty("slug", out var sl) ? sl.GetString() ?? "" : "";
-            if (string.IsNullOrEmpty(slug)) continue;
+            if (!MosqueSlug.IsValid(slug)) continue;
             var name = item.TryGetProperty("name", out var nm) ? nm.GetString() ?? slug : slug;
             var city = item.TryGetProperty("city", out var c) ? c.GetString() : null;
             var zip = item.TryGetProperty("zipcode", out var z) ? z.GetString() : null;
@@ -204,144 +305,64 @@ public sealed class MawaqitClient
         return hits;
     }
 
-    private async Task<string> CountryCodeAtAsync(double lat, double lon, CancellationToken ct)
+    private async Task<string?> CountryCodeAtAsync(double lat, double lon, CancellationToken ct)
     {
-        try
+        // Panning within a region should not hit Nominatim every time (~50 km grid).
+        var key = (Math.Round(lat * 2) / 2, Math.Round(lon * 2) / 2);
+        lock (_reverseCache)
         {
-            var url = $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json";
-            using var resp = await _http.GetAsync(url, ct);
-            resp.EnsureSuccessStatusCode();
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            if (doc.RootElement.TryGetProperty("address", out var addr) &&
-                addr.TryGetProperty("country_code", out var cc))
-                return cc.GetString()?.ToUpperInvariant() ?? GuessCountry(lat, lon);
+            if (_reverseCache.TryGetValue(key, out var hit)) return hit;
         }
-        catch { }
-        return GuessCountry(lat, lon);
+        var url = string.Create(CultureInfo.InvariantCulture,
+            $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&zoom=3");
+        using var doc = await NominatimAsync(url, ct);
+        if (doc?.RootElement.TryGetProperty("address", out var addr) == true
+            && addr.TryGetProperty("country_code", out var cc)
+            && cc.GetString() is { Length: 2 } code)
+        {
+            code = code.ToUpperInvariant();
+            lock (_reverseCache) { _reverseCache[key] = code; }
+            return code;
+        }
+        return null;
     }
 
     private async Task<(double lat, double lon, string cc)?> GeocodeAsync(string word, CancellationToken ct)
     {
-        var url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(word)}&format=json&limit=1";
-        using var resp = await _http.GetAsync(url, ct);
-        resp.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        if (doc.RootElement.GetArrayLength() == 0) return null;
+        using var doc = await NominatimAsync(
+            $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(word)}&format=json&limit=1&addressdetails=1", ct);
+        if (doc is null || doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0) return null;
         var first = doc.RootElement[0];
-        if (!double.TryParse(first.GetProperty("lat").GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lat)) return null;
-        if (!double.TryParse(first.GetProperty("lon").GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lon)) return null;
-        var cc = await CountryCodeAtAsync(lat, lon, ct);
-        return (lat, lon, cc);
+        if (!double.TryParse(first.GetProperty("lat").GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var lat)) return null;
+        if (!double.TryParse(first.GetProperty("lon").GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)) return null;
+        var cc = first.TryGetProperty("address", out var addr) && addr.TryGetProperty("country_code", out var c)
+            ? c.GetString()?.ToUpperInvariant()
+            : await CountryCodeAtAsync(lat, lon, ct);
+        return cc is { Length: 2 } ? (lat, lon, cc) : null;
     }
 
-    public static string? NormalizeMosqueInput(string input)
+    /// <summary>Nominatim's usage policy: at most one request per second, identified client.</summary>
+    private async Task<JsonDocument?> NominatimAsync(string url, CancellationToken ct)
     {
-        input = input.Trim();
-        if (input.Length == 0) return null;
-        if (ExtractSlugFromUrl(input) is string slug) return slug;
-        if (!input.Contains(' ') && input.Length >= 3 && input.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
-            return input.ToLowerInvariant();
-        return null;
-    }
-
-    public static string? ExtractSlugFromUrl(string input)
-    {
-        var s = input.Trim().TrimEnd('/');
-        var q = s.IndexOfAny(['?', '#']);
-        if (q >= 0) s = s[..q].TrimEnd('/');
-        var lower = s.ToLowerInvariant();
-        var marker = "mawaqit.net/";
-        var idx = lower.IndexOf(marker, StringComparison.Ordinal);
-        if (idx < 0 && !lower.StartsWith("mawaqit.net/")) return null;
-        if (idx < 0) idx = 0;
-        else idx += marker.Length;
-        var after = s[Math.Min(idx, s.Length)..];
-        var parts = after.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        static bool Meta(string p) => p is "m" or "mobile" or "www" or "api" or "static"
-            or "en" or "fr" or "ar" or "es" or "de" or "nl" or "tr" or "id" or "ur" or "bn" or "ru" or "zh" or "it" or "pt";
-        for (int i = parts.Length - 1; i >= 0; i--)
+        await _nominatimGate.WaitAsync(ct);
+        try
         {
-            if (!Meta(parts[i].ToLowerInvariant()))
-                return parts[i];
-        }
-        return null;
-    }
-
-    private static JsonSerializerOptions JsonOpt() => new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
-    private static JsonNode? ExtractConfData(string html)
-    {
-        foreach (var marker in new[] { "var confData =", "let confData =", "confData =" })
-        {
-            var start = html.IndexOf(marker, StringComparison.Ordinal);
-            if (start < 0) continue;
-            start += marker.Length;
-            var slice = html[start..].TrimStart();
-            if (!slice.StartsWith('{')) continue;
-            int depth = 0, end = -1;
-            for (int i = 0; i < slice.Length; i++)
+            var wait = _lastNominatimCall.AddSeconds(1.1) - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
+            _lastNominatimCall = DateTime.UtcNow;
+            using var resp = await _http.GetAsync(url, ct);
+            if (!resp.IsSuccessStatusCode)
             {
-                if (slice[i] == '{') depth++;
-                else if (slice[i] == '}')
-                {
-                    depth--;
-                    if (depth == 0) { end = i + 1; break; }
-                }
+                Log.Warning("Nominatim returned {Status} for {Url}", (int)resp.StatusCode, url);
+                return null;
             }
-            if (end < 0) continue;
-            try { return JsonNode.Parse(slice[..end]); }
-            catch { }
+            return JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
         }
-        return null;
-    }
-
-    private static PrayerTimes? TimesFromConf(JsonNode conf)
-    {
-        var times = conf["times"]?.AsArray();
-        if (times is null || times.Count < 5) return null;
-        string Get(int i) => times[i]?.ToString() ?? "";
-        return new PrayerTimes
+        finally
         {
-            Fajr = Get(0),
-            Sunrise = conf["shuruq"]?.ToString() ?? "00:00",
-            Dohr = Get(1),
-            Asr = Get(2),
-            Maghreb = Get(3),
-            Icha = Get(4)
-        };
-    }
-
-    private static IqamaTimes? IqamaFromConf(JsonNode conf, int month, int day)
-    {
-        var cal = conf["iqamaCalendar"]?.AsArray();
-        if (cal != null)
-        {
-            var monthIdx = Math.Max(0, month - 1);
-            if (monthIdx < cal.Count && cal[monthIdx] is JsonObject monthObj
-                && monthObj[day.ToString()] is JsonArray row)
-            {
-                var iq = IqamaFromRow(row);
-                if (iq != null) return iq;
-            }
+            _nominatimGate.Release();
         }
-        if (conf["iqama"] is JsonArray fixedRow)
-            return IqamaFromRow(fixedRow);
-        return null;
     }
-
-    private static IqamaTimes? IqamaFromRow(JsonArray row)
-    {
-        if (row.Count < 5) return null;
-        string Get(int i) => row[i]?.ToString() ?? "";
-        var iq = new IqamaTimes { Fajr = Get(0), Dohr = Get(1), Asr = Get(2), Maghreb = Get(3), Icha = Get(4) };
-        return HasIqama(iq) ? iq : null;
-    }
-
-    private static bool HasIqama(IqamaTimes iq)
-        => new[] { iq.Fajr, iq.Dohr, iq.Asr, iq.Maghreb, iq.Icha }.Any(s => !string.IsNullOrWhiteSpace(s));
 
     private static List<MosqueHit> Filter(List<MosqueHit> all, string word)
     {
@@ -356,30 +377,10 @@ public sealed class MawaqitClient
 
     private static List<MosqueHit> Nearest(List<MosqueHit> all, double lat, double lon, int limit)
         => all.Where(h => h.Lat.HasValue && h.Lon.HasValue)
-            .OrderBy(h => Haversine(lat, lon, h))
+            .OrderBy(h => Distance(lat, lon, h))
             .Take(limit)
             .ToList();
 
-    private static double Haversine(double lat1, double lon1, MosqueHit h)
-    {
-        const double R = 6371;
-        var lat2 = h.Lat ?? 0;
-        var lon2 = h.Lon ?? 0;
-        static double Rad(double d) => d * Math.PI / 180;
-        var dlat = Rad(lat2 - lat1);
-        var dlon = Rad(lon2 - lon1);
-        var a = Math.Pow(Math.Sin(dlat / 2), 2)
-              + Math.Cos(Rad(lat1)) * Math.Cos(Rad(lat2)) * Math.Pow(Math.Sin(dlon / 2), 2);
-        return 2 * R * Math.Asin(Math.Sqrt(a));
-    }
-
-    private static string GuessCountry(double lat, double lon)
-    {
-        if (lat is >= 41 and <= 83 && lon is >= -141 and <= -52) return "CA";
-        if (lat is >= 24 and <= 50 && lon is >= -125 and <= -66) return "US";
-        if (lat is >= 41 and <= 51.5 && lon is >= -5.5 and <= 10) return "FR";
-        if (lat is >= 49 and <= 61 && lon is >= -8.5 and <= 2) return "GB";
-        if (lat is >= 47 and <= 55.5 && lon is >= 5.5 and <= 15.5) return "DE";
-        return "FR";
-    }
+    private static double Distance(double lat, double lon, MosqueHit h)
+        => Qibla.GreatCircleKm(lat, lon, h.Lat ?? 0, h.Lon ?? 0);
 }

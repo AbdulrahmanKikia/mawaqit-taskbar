@@ -6,109 +6,137 @@
   <title>Find a mosque</title>
   <link rel="stylesheet" href="/leaflet.css" />
   <style>
-    :root, html.theme-dark {
-      --bg: #202020;
-      --panel: #2c2c2c;
-      --text: #ffffff;
-      --muted: #9a9a9a;
-      --accent: #60cdff;
-      --accent-text: #003545;
-      --line: #3a3a3a;
-      --hover: rgba(255,255,255,0.06);
-      --active: rgba(96,205,255,0.16);
-      --input: #1c1c1c;
-      --radius: 4px;
-    }
-    html.theme-light {
-      --bg: #f3f3f3;
+    /* App palette: blue on white (light), blue on black (dark). */
+    :root, html.theme-light {
+      --bg: #f5f7fb;
       --panel: #ffffff;
-      --text: #1a1a1a;
-      --muted: #5c5c5c;
-      --accent: #0078d4;
-      --accent-text: #ffffff;
-      --line: #e5e5e5;
-      --hover: rgba(0,0,0,0.04);
-      --active: rgba(0,120,212,0.12);
-      --input: #f9f9f9;
+      --text: #0f172a;
+      --muted: #5b6475;
+      --primary: #1f5fd6;
+      --primary-strong: #1847a8;
+      --primary-soft: rgba(31, 95, 214, 0.10);
+      --highlight: #2f74f0;
+      --highlight-soft: rgba(47, 116, 240, 0.12);
+      --on-primary: #ffffff;
+      --line: #e3e8f0;
+      --hover: rgba(31, 95, 214, 0.06);
+      --input: #ffffff;
+      --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 14px rgba(15, 23, 42, .07);
+      --radius: 10px;
+    }
+    html.theme-dark {
+      --bg: #0b0f17;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --primary: #4f8bff;
+      --primary-strong: #3b74e6;
+      --primary-soft: rgba(79, 139, 255, 0.16);
+      --highlight: #7fb2ff;
+      --highlight-soft: rgba(127, 178, 255, 0.14);
+      --on-primary: #ffffff;
+      --line: #1f2937;
+      --hover: rgba(79, 139, 255, 0.08);
+      --input: #0b1220;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .3);
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-      font: 14px/1.4 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
-    #app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
-    #side { display: flex; flex-direction: column; border-inline-end: 1px solid var(--line); background: var(--panel); min-height: 0; }
-    #side header { padding: 14px 16px 8px; flex-shrink: 0; }
-    #side header h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
-    #side header p { margin: 0; color: var(--muted); font-size: 12px; }
-    .search-row { display: flex; gap: 8px; padding: 8px 16px 8px; flex-shrink: 0; }
+      font: 14px/1.45 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+    #app { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+    #side { display: flex; flex-direction: column; border-inline-end: 1px solid var(--line);
+      background: var(--panel); min-height: 0; }
+    #side header { padding: 18px 18px 10px; flex-shrink: 0; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .brand .mark { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+      display: grid; place-items: center; box-shadow: var(--shadow); }
+    .brand .mark::after { content: ""; width: 12px; height: 12px; border-radius: 50%;
+      box-shadow: -3px 0 0 1.5px #ffffff; transform: translateX(3px); }
+    #side header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+    #side header p { margin: 0; color: var(--muted); font-size: 12.5px; }
+    .search-row { display: flex; gap: 8px; padding: 6px 18px 8px; flex-shrink: 0; }
     .search-row input {
-      flex: 1; border: 1px solid var(--line); background: var(--input); color: var(--text);
-      border-radius: var(--radius); padding: 8px 10px; outline: none;
+      flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--input); color: var(--text);
+      border-radius: var(--radius); padding: 9px 12px; outline: none;
     }
-    .search-row input:focus { border-color: var(--accent); }
-    .search-row button, #useBtn, #favBtn, #locBtn, #refreshBtn {
-      border: 0; border-radius: var(--radius); padding: 8px 12px; cursor: pointer;
-      background: var(--accent); color: var(--accent-text); font-weight: 600;
+    .search-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+    button { font: inherit; }
+    .search-row button, #useBtn, #favBtn, #locBtn, #refreshBtn, #spotBtn {
+      border: 0; border-radius: var(--radius); padding: 9px 14px; cursor: pointer;
+      background: var(--primary); color: var(--on-primary); font-weight: 600;
+      transition: background .15s ease, transform .05s ease;
     }
-    #locBtn, #refreshBtn { background: var(--hover); color: var(--text); border: 1px solid var(--line); }
-    .actions { display: flex; gap: 8px; padding: 0 16px 8px; flex-shrink: 0; }
+    .search-row button:hover, #useBtn:hover:enabled, #spotBtn:hover { background: var(--primary-strong); }
+    button:active { transform: translateY(1px); }
+    #locBtn, #refreshBtn, #favBtn { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    #locBtn:hover, #refreshBtn:hover, #favBtn:hover:enabled { background: var(--hover); }
+    .actions { display: flex; gap: 8px; padding: 0 18px 8px; flex-shrink: 0; }
     .actions button { flex: 1; }
-    #status { padding: 0 16px 8px; color: var(--muted); font-size: 12px; min-height: 18px; flex-shrink: 0; }
+    .legend { display: flex; gap: 14px; padding: 2px 18px 8px; color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.mawaqit { background: var(--primary); }
+    .dot.osm { background: var(--panel); border: 2px solid var(--highlight); }
+    #status { padding: 0 18px 8px; color: var(--muted); font-size: 12px; min-height: 18px; flex-shrink: 0; }
     #confirm {
-      flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line); background: var(--bg);
+      flex-shrink: 0; margin: 0 12px 8px; padding: 12px 14px; border-radius: var(--radius);
+      background: var(--primary-soft); border: 1px solid transparent;
     }
-    #confirm .picked { font-size: 12px; color: var(--muted); margin-bottom: 8px; min-height: 16px; }
-    #confirm .picked strong { color: var(--text); font-weight: 600; }
+    #confirm .picked { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; min-height: 16px; }
+    #confirm .picked strong { color: var(--text); font-weight: 650; }
+    #confirm .note { font-size: 12px; color: var(--muted); margin-bottom: 10px; min-height: 0; }
+    #confirm .note:empty { display: none; }
     #confirm .confirm-actions { display: flex; gap: 8px; }
-    #confirm .confirm-actions button { flex: 1; min-width: 0; padding: 12px 8px; }
-    #useBtn:disabled, #favBtn:disabled { opacity: 0.4; cursor: not-allowed; }
-    #list { flex: 1; overflow: auto; padding: 8px 8px 12px; min-height: 0; }
+    #confirm .confirm-actions button { flex: 1; min-width: 0; padding: 11px 8px; }
+    #useBtn:disabled, #favBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #list { flex: 1; overflow: auto; padding: 4px 10px 14px; min-height: 0; }
     .item {
       width: 100%; text-align: start; border: 1px solid transparent; background: transparent;
-      color: var(--text); border-radius: var(--radius); padding: 10px; cursor: pointer; margin-bottom: 4px;
+      color: var(--text); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; margin-bottom: 2px;
+      display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
     }
     .item:hover { background: var(--hover); }
-    .item.active { border-color: var(--accent); background: var(--active); }
-    .item .name { font-weight: 600; margin-bottom: 2px; }
-    .item .meta { color: var(--muted); font-size: 12px; }
+    .item.active { border-color: var(--primary); background: var(--primary-soft); }
+    .item .name { font-weight: 600; }
+    .item .meta { color: var(--muted); font-size: 12px; grid-column: 1; }
+    .badge { grid-row: 1 / span 2; grid-column: 2; font-size: 11px; font-weight: 600; padding: 3px 8px;
+      border-radius: 999px; white-space: nowrap; }
+    .badge.mawaqit { background: var(--primary-soft); color: var(--primary); }
+    .badge.osm { background: var(--highlight-soft); color: var(--highlight); }
+    #mapWrap { position: relative; height: 100%; }
     #map { height: 100%; background: var(--bg); }
+    /* Location mode: a pin fixed at the centre of the map. */
+    #pin { display: none; position: absolute; left: 50%; top: 50%; z-index: 500; pointer-events: none;
+      width: 26px; height: 26px; margin: -26px 0 0 -13px; }
+    #pin::before { content: ""; position: absolute; inset: 0; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); background: var(--primary); box-shadow: var(--shadow); border: 3px solid var(--highlight); }
+    body.mode-location #pin { display: block; }
+    body.mode-location .mosque-only { display: none !important; }
+    body:not(.mode-location) .location-only { display: none !important; }
     .name-tag {
-      background: var(--accent);
-      color: var(--accent-text);
-      border: 0;
-      border-radius: var(--radius);
-      padding: 2px 7px;
-      font: 600 11px/1.3 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-      white-space: nowrap;
-      box-shadow: 0 1px 3px rgba(0,0,0,.25);
-      pointer-events: auto;
-      cursor: pointer;
+      background: var(--primary); color: var(--on-primary); border: 0; border-radius: 999px;
+      padding: 2px 9px; font: 600 11px/1.35 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      white-space: nowrap; box-shadow: var(--shadow); pointer-events: auto; cursor: pointer;
     }
-    .name-tag.active { outline: 2px solid var(--text); }
-    .leaflet-tooltip.name-tip {
-      background: transparent; border: 0; box-shadow: none; padding: 0; margin: 0;
-    }
+    .name-tag.osm { background: var(--panel); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--highlight), var(--shadow); }
+    .name-tag.active { outline: 2px solid var(--highlight); outline-offset: 1px; }
+    .leaflet-tooltip.name-tip { background: transparent; border: 0; box-shadow: none; padding: 0; margin: 0; }
     .leaflet-tooltip.name-tip::before { display: none; }
-    .leaflet-bar { border: 0 !important; box-shadow: none !important; }
+    .leaflet-bar { border: 0 !important; box-shadow: var(--shadow) !important; border-radius: var(--radius) !important; }
     .leaflet-control-zoom a {
-      background: var(--panel) !important;
-      color: var(--text) !important;
-      border: 1px solid var(--line) !important;
-      width: 32px !important; height: 32px !important; line-height: 32px !important;
-      border-radius: var(--radius) !important;
+      background: var(--panel) !important; color: var(--text) !important; border: 1px solid var(--line) !important;
+      width: 34px !important; height: 34px !important; line-height: 34px !important;
     }
-    .leaflet-control-attribution {
-      background: var(--panel) !important;
-      color: var(--muted) !important;
-    }
-    .leaflet-control-attribution a { color: var(--accent) !important; }
+    .leaflet-control-attribution { background: var(--panel) !important; color: var(--muted) !important; }
+    .leaflet-control-attribution a { color: var(--primary) !important; }
   </style>
 </head>
 <body>
   <div id="app">
     <aside id="side">
       <header>
-        <h1 id="mapTitle">Find your mosque</h1>
+        <div class="brand"><div class="mark"></div><h1 id="mapTitle">Find your mosque</h1></div>
         <p id="mapHint">Click a name on the map or list. Double-click to use it.</p>
       </header>
       <div class="search-row">
@@ -117,21 +145,31 @@
       </div>
       <div class="actions">
         <button id="locBtn" type="button">My location</button>
-        <button id="refreshBtn" type="button">Refresh map</button>
+        <button id="refreshBtn" type="button" class="mosque-only">Refresh map</button>
+      </div>
+      <div class="legend mosque-only">
+        <span><i class="dot mawaqit"></i><span id="legendMawaqit">Mosque timetable</span></span>
+        <span><i class="dot osm"></i><span id="legendOsm">Calculated times</span></span>
       </div>
       <div id="status">Starting…</div>
       <div id="confirm">
         <div class="picked" id="pickedLabel">No mosque selected</div>
-        <div class="confirm-actions">
+        <div class="note" id="pickedNote"></div>
+        <div class="confirm-actions mosque-only">
           <button id="useBtn" type="button" disabled>Use selected</button>
           <button id="favBtn" type="button" disabled>Set as favorite</button>
         </div>
+        <div class="confirm-actions location-only">
+          <button id="spotBtn" type="button">Use the pin as my location</button>
+        </div>
       </div>
-      <div id="list"></div>
+      <div id="list" class="mosque-only"></div>
     </aside>
-    <div id="map"></div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div id="pin"></div>
+    </div>
   </div>
-  <script src="/leaflet.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
