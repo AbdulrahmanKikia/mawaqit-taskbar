@@ -1,0 +1,86 @@
+<Window
+    x:Class="Mawaqit.WinUI.Views.QiblaWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid x:Name="AppTitleBar" Padding="16,0,140,0">
+            <TextBlock x:Name="titleBarTb" VerticalAlignment="Center"
+                       Style="{StaticResource CaptionTextBlockStyle}"/>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" Padding="24,4,24,24">
+            <StackPanel Spacing="14" MaxWidth="420">
+                <!-- No mosque location yet -->
+                <StackPanel x:Name="noLocationPanel" Spacing="12" Visibility="Collapsed" Margin="0,24,0,0">
+                    <TextBlock x:Name="noLocationTb" TextWrapping="Wrap"/>
+                    <Button x:Name="chooseMosqueBtn" Click="ChooseMosque_Click" Style="{StaticResource AccentButtonStyle}"/>
+                </StackPanel>
+
+                <StackPanel x:Name="readingPanel" Spacing="14">
+                    <!-- Compass: the dial is north-up; the needle points to the Qibla. -->
+                    <Grid Width="260" Height="260" HorizontalAlignment="Center" Margin="0,8,0,0"
+                          FlowDirection="LeftToRight">
+                        <Grid x:Name="dial" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <RotateTransform x:Name="dialRotation"/>
+                            </Grid.RenderTransform>
+                            <Ellipse Stroke="{ThemeResource CardStrokeColorDefaultBrush}" StrokeThickness="1.5"
+                                     Fill="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+                            <Canvas x:Name="ticks" Width="260" Height="260"/>
+                            <Grid x:Name="needle" RenderTransformOrigin="0.5,0.5">
+                                <Grid.RenderTransform>
+                                    <RotateTransform x:Name="needleRotation"/>
+                                </Grid.RenderTransform>
+                                <!-- Arrow from the centre to the rim, with a small Kaaba mark at the tip. -->
+                                <Path Data="M 130,34 L 141,128 L 130,122 L 119,128 Z"
+                                      Fill="{ThemeResource BrandPrimaryBrush}"/>
+                                <Path Data="M 130,138 L 137,200 L 130,196 L 123,200 Z"
+                                      Fill="{ThemeResource ControlStrongFillColorDefaultBrush}" Opacity="0.35"/>
+                                <Rectangle Width="12" Height="12" RadiusX="2" RadiusY="2"
+                                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,16,0,0"
+                                           Fill="{ThemeResource BrandMarkBrush}"/>
+                            </Grid>
+                            <Ellipse Width="12" Height="12" Fill="{ThemeResource BrandHighlightBrush}"/>
+                        </Grid>
+                    </Grid>
+
+                    <StackPanel HorizontalAlignment="Center" Spacing="2">
+                        <TextBlock x:Name="bearingTb" Style="{StaticResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" TextAlignment="Center"/>
+                        <TextBlock x:Name="fromTb" Opacity="0.7" HorizontalAlignment="Center"
+                                   TextAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="distanceTb" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="liveTb" Visibility="Collapsed" TextWrapping="Wrap" TextAlignment="Center"
+                               Foreground="{ThemeResource BrandPrimaryBrush}"/>
+
+                    <Border Padding="14,12" CornerRadius="8"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE706;" FontSize="16" VerticalAlignment="Top"/>
+                                <TextBlock x:Name="sunTb" TextWrapping="Wrap" MaxWidth="350"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE787;" FontSize="16" VerticalAlignment="Top"/>
+                                <TextBlock x:Name="shadowTb" TextWrapping="Wrap" MaxWidth="350"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE946;" FontSize="16" VerticalAlignment="Top"/>
+                                <TextBlock x:Name="compassNoteTb" TextWrapping="Wrap" MaxWidth="350" Opacity="0.75"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="offlineTb" Opacity="0.55" FontSize="12" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

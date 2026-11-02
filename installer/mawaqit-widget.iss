@@ -52,12 +52,15 @@ Source: "..\dist\winui\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+; AppUserModelID must match NotificationService.AppId, or Windows drops toasts (checked by tests).
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; AppUserModelID: "Mawaqit.Widget"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
+; Toast registration written by the app on first start (NotificationService.Init).
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Mawaqit.Widget"; Flags: uninsdeletekey dontcreatekey
 
 ; Launch is optional — auto-launch shows a scary error when Smart App Control
 ; / Application Control blocks the unsigned exe (CreateProcess 4551).

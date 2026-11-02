@@ -8,6 +8,35 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- App palette: blue on white (light), blue on black (dark). Same values as the map page. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="#1F5FD6"/>
+                    <SolidColorBrush x:Key="BrandPrimarySoftBrush" Color="#1A1F5FD6"/>
+                    <SolidColorBrush x:Key="BrandHighlightBrush" Color="#2F74F0"/>
+                    <SolidColorBrush x:Key="BrandHeroHighlightBrush" Color="#CFE0FF"/>
+                    <SolidColorBrush x:Key="BrandOnPrimaryBrush" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="BrandTrackBrush" Color="#40FFFFFF"/>
+                    <SolidColorBrush x:Key="BrandMarkBrush" Color="#111827"/>
+                    <LinearGradientBrush x:Key="BrandHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#2563EB" Offset="0"/>
+                        <GradientStop Color="#1E3A8A" Offset="1"/>
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="#4F8BFF"/>
+                    <SolidColorBrush x:Key="BrandPrimarySoftBrush" Color="#2E4F8BFF"/>
+                    <SolidColorBrush x:Key="BrandHighlightBrush" Color="#7FB2FF"/>
+                    <SolidColorBrush x:Key="BrandHeroHighlightBrush" Color="#BFD7FF"/>
+                    <SolidColorBrush x:Key="BrandOnPrimaryBrush" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="BrandTrackBrush" Color="#33FFFFFF"/>
+                    <SolidColorBrush x:Key="BrandMarkBrush" Color="#F3F4F6"/>
+                    <LinearGradientBrush x:Key="BrandHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#1D4ED8" Offset="0"/>
+                        <GradientStop Color="#0B1B3F" Offset="1"/>
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
             <helpers:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <CornerRadius x:Key="OverlayCornerRadius">8</CornerRadius>
             <Style x:Key="QuietIconButton" TargetType="Button">

@@ -1,6 +1,6 @@
 # Mawaqit Widget — user guide
 
-Windows 11 prayer-times chip. Times come from [Mawaqit](https://mawaqit.net). Needs Windows 11 (build 22000+) and internet.
+Windows 11 prayer-times chip. Times come from [Mawaqit](https://mawaqit.net). Needs Windows 11 (build 22000+). Internet is needed to pick a mosque; after that the whole year is saved, so times keep working offline.
 
 For install, uninstall, and SmartScreen / error 4551, see [README.md](README.md).
 
@@ -15,7 +15,7 @@ For install, uninstall, and SmartScreen / error 4551, see [README.md](README.md)
 ## Chip (in the taskbar)
 
 - **Left-click** — today’s adhan and iqama. A dot marks the prayer the countdown is aimed at. Click away or Esc to close.
-- **Right-click** — change mosque, favorites, chip size, countdown, placement, preferences, hide, quit.
+- **Right-click** — change mosque, favorites, Qibla direction, chip size, countdown, placement, preferences, hide, quit.
 
 ### Chip size
 
@@ -32,6 +32,36 @@ For install, uninstall, and SmartScreen / error 4551, see [README.md](README.md)
 | **Screen strip** | Full-width bar above the taskbar. Windows stay above it. Mosque name is on the **right**. |
 
 Switch from right-click → **Placement**, the tray **Placement** menu, or Preferences.
+
+## Prayer times: mosque or where you are
+
+Preferences → **Prayer times** → *Times from*:
+
+- **My mosque** — your mosque's own timetable (with its iqama). This is the default.
+- **Where I am** — calculated for your location; turn on *Detect with Windows location*, or pick a spot on the map. Times change every day through the year.
+- **Automatic** — your mosque while you are near it; once you are more than 50 km away (travelling), times for where you are. The flyout then says e.g. *350 km from Masjid Al-Hadi · Calculated · ISNA*.
+
+**Calculation method** defaults to the usual one for your Windows region (ISNA in Canada/US, Umm al-Qura in Saudi Arabia, Karachi + Hanafi Asr in Pakistan, …); change it, the Asr school, or the high-latitude rule in the same section.
+
+If Windows location is off for desktop apps, the section shows a link to turn it on (Settings → Privacy & security → Location → *Let desktop apps access your location*).
+
+## Mosques that are not on Mawaqit
+
+The map also shows mosques from OpenStreetMap (white dot with a blue outline, *Calculated*), so places Mawaqit does not cover, like many in Brampton, still appear. For those, adhan is calculated for the mosque's exact location; type the mosque's iqama times in Preferences (*13:30* or *+10* minutes after adhan). A link to the mosque's own website is there when OpenStreetMap knows it.
+
+## Offline
+
+The widget saves your mosque's full yearly timetable (adhan and iqama) the first time it loads it, and refreshes it every few hours while online. With no connection it keeps counting down from the saved times; the flyout then shows **Saved times from …** in amber so you know they may be a few days old. When the connection comes back it updates by itself.
+
+## Qibla direction
+
+Right-click the chip → **Qibla direction**, or the **Qibla** button in the flyout. It works offline, using your location when known, otherwise your mosque's.
+
+- The needle shows the Qibla on a north-up dial, with the angle from **true north** (e.g. *119° ESE* in London).
+- **Using the sun:** in daylight it tells you how far to turn after facing the sun (*Face the sun, then turn 60° to the left*).
+- **Shadow days:** twice a year the sun passes directly over the Kaaba (around 27–28 May and 15–16 July), and every shadow points straight away from the Qibla. Around 28 November and 13 January it is directly opposite, so shadows point towards it. The window shows the next one you can see from where you are, if any.
+- A phone or hiking compass points to **magnetic** north, which can be several degrees off true north depending on where you live.
+- On a tablet with a compass sensor the dial turns with the device.
 
 ## Countdown
 
@@ -63,5 +93,6 @@ Hide keeps the app running; Show brings the chip or strip back.
 
 - After Explorer restarts, the chip should come back by itself.
 - A packed taskbar can overlap the chip — use **Compact**, or **Manual position** from the tray.
+- If the settings file is ever damaged, the app starts with defaults and tells you where it kept the old file.
 - The mosque map needs [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (already on most Windows 11 PCs).
 - Settings are saved in `%APPDATA%\Mawaqit\Mawaqit Widget\config.toml`.

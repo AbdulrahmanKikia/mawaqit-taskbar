@@ -9,6 +9,7 @@ namespace Mawaqit.WinUI;
 public partial class App : Application
 {
     private static Mutex? _mutex;
+    private static DateTime _lastCrashDialog = DateTime.MinValue;
 
     public static event Action? Quitting;
     public static ICommand Quit { get; }
@@ -31,9 +32,14 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
-            Log.Fatal(e.Exception, e.Exception.Message);
-            MessageBox.Error(e.Exception.ToString());
+            // Full details go to the log only; the user gets a short message, at most
+            // once every 10 minutes, so a fault in a 1-second timer cannot flood dialogs.
+            Log.Fatal(e.Exception, "Unhandled exception");
             e.Handled = true;
+            if (DateTime.UtcNow - _lastCrashDialog < TimeSpan.FromMinutes(10)) return;
+            _lastCrashDialog = DateTime.UtcNow;
+            MessageBox.Error(string.Format(LocaleManager.Default.Get("UI.UnexpectedError"),
+                Path.Combine(AppConfigStore.RootDir, "logs")));
         };
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
     }
@@ -57,8 +63,13 @@ public partial class App : Application
             return;
         }
 
+        // Keep the map's browser profile with our other local data, not next to the exe.
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", AppConfigStore.WebViewDataDir);
+
         AppState.Current.Load();
         Autostart.Apply(AppState.Current.Config.StartWithWindows);
+        if (AppConfigStore.QuarantinedPath is { } moved)
+            MessageBox.Warning(string.Format(LocaleManager.Default.Get("UI.ConfigReset"), moved));
 
         var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         ThemeHelper.Initialize(dispatcher);

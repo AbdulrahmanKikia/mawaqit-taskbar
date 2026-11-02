@@ -5,6 +5,7 @@ using Microsoft.UI.Dispatching;
 using Mawaqit.WinUI.Helpers;
 using Mawaqit.WinUI.Views;
 using Serilog;
+using Windows.Networking.Connectivity;
 
 namespace Mawaqit.WinUI.Data;
 
@@ -22,6 +23,11 @@ public sealed class AppState : INotifyPropertyChanged
     public const string Version = "0.4.0";
     public const string Repo = "AbdulrahmanKikia/mawaqit-taskbar";
 
+    /// <summary>Times are re-read this often so mosque edits (iqama changes) show up.</summary>
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromHours(6);
+    /// <summary>Saved times older than this are labelled as such in the flyout.</summary>
+    private static readonly TimeSpan StaleAfter = TimeSpan.FromDays(2);
+
     public static AppState Current { get; } = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -36,13 +42,21 @@ public sealed class AppState : INotifyPropertyChanged
     public ICommand SetChipSizeCommand { get; }
     public ICommand SetHostKindCommand { get; }
 
-    private readonly MawaqitClient _publicMap = new("https://mawaqit.net");
-    private MawaqitClient _client = new(AppConfig.DefaultApiBase);
+    private readonly MawaqitClient _client = new();
+    private readonly TimetableStore _store = new(AppConfigStore.CacheDir);
+    private readonly RetryBackoff _backoff = new();
+    private readonly AlertLedger _ledger = new();
     private DispatcherQueue? _dispatcher;
     private DispatcherQueueTimer? _tick;
-    private IReadOnlyList<PrayerSlot> _today = Array.Empty<PrayerSlot>();
-    private readonly HashSet<string> _notified = new();
-    private DateTime _lastFetch = DateTime.MinValue;
+    private MosqueTimetable? _table;
+    private ITimesSource? _source;
+    private ActiveSource _active = new(ActiveKind.None, null);
+    private DispatcherQueueTimer? _locationTimer;
+    private bool _locating;
+    private DateOnly _builtFor;
+    private List<PrayerSlot> _window = new();      // yesterday, today, tomorrow
+    private List<PrayerSlot> _today = new();
+    private DateTimeOffset _lastSuccess = DateTimeOffset.MinValue;
     private bool _fetching;
     private string _slotsFingerprint = "";
     private DisplayMode _lastDisplayMode = DisplayMode.Expanded;
@@ -53,14 +67,36 @@ public sealed class AppState : INotifyPropertyChanged
     public string ChipLine => Config.ChipSize == ChipSize.Compact
         ? ChipCountdown
         : $"{ChipName}  {ChipTime}  ·  {ChipCountdown}";
-    public string MosqueLabel => Config.Mosque?.DisplayName ?? LocaleManager.Default.Get("UI.NoMosque");
+    /// <summary>Where today's times are for: the mosque, or the user's place when calculated for them.</summary>
+    public string MosqueLabel => _active.Kind == ActiveKind.LocationCalculated
+        ? (string.IsNullOrWhiteSpace(Config.Location.Name) ? LocaleManager.Default.Get("UI.YourLocation") : Config.Location.Name)
+        : Config.Mosque?.DisplayName ?? LocaleManager.Default.Get("UI.NoMosque");
+    /// <summary>The chosen mosque, whatever the times source.</summary>
+    public string MosqueName => Config.Mosque?.DisplayName ?? LocaleManager.Default.Get("UI.NoMosque");
+    /// <summary>How the times were obtained ("Calculated · ISNA", "350 km from …"), or "" for a mosque timetable.</summary>
+    public string SourceDetail { get; private set; } = "";
     public string TrackingLabel { get; private set; } = "";
     public string NextHeadline { get; private set; } = "";
     public string Status { get; private set; } = "loading";
+    /// <summary>"" when times are fresh; otherwise says the widget is showing saved times.</summary>
+    public string FreshnessLabel { get; private set; } = "";
     public bool HasError { get; private set; }
     public bool IsRefreshing { get; private set; }
-    public bool IsConfigured => Config.Mosque != null;
+    public bool IsConfigured => Config.Mosque != null || Config.Location.Point != null;
+    public string LocationStatus => LocationService.Access switch
+    {
+        LocationAccess.Denied => LocaleManager.Default.Get("UI.LocationDenied"),
+        LocationAccess.Unavailable => LocaleManager.Default.Get("UI.LocationUnavailable"),
+        _ => Config.Location.Point is null ? LocaleManager.Default.Get("UI.LocationUnknown") : MosqueLabelForLocation,
+    };
+    private string MosqueLabelForLocation => string.IsNullOrWhiteSpace(Config.Location.Name)
+        ? FormattableString.Invariant($"{Config.Location.Latitude:0.###}, {Config.Location.Longitude:0.###}")
+        : Config.Location.Name;
+    private static string RegionCode => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName;
+    public (CalculationMethod Method, AsrSchool Asr) EffectiveCalculation => Methods.Resolve(Config.Calculation, RegionCode);
     public bool IsNear { get; private set; }
+    /// <summary>How far we are from the previous prayer to the next one, 0..1 (flyout progress bar).</summary>
+    public double NextProgress { get; private set; }
 
     private AppState()
     {
@@ -91,8 +127,8 @@ public sealed class AppState : INotifyPropertyChanged
     {
         Config = AppConfigStore.Load();
         LocaleManager.Default.Apply(Config.Language);
-        _client = new MawaqitClient(Config.ApiBaseUrl);
         _lastDisplayMode = ChipLayout.ToDisplayMode(Config.ChipSize);
+        UseTimetable(Config.Mosque is { Provider: MosqueProvider.Mawaqit } m ? _store.Load(m.MasjidId) : null);
     }
 
     public void Persist()
@@ -133,8 +169,31 @@ public sealed class AppState : INotifyPropertyChanged
         Config.Language = next;
         Persist();
         LocaleManager.Default.Apply(next);
-        _slotsFingerprint = "";
+        ResolveSource();
         Tick();
+    }
+
+    /// <summary>Times source or calculation settings changed in Preferences.</summary>
+    public void ApplyTimesSettings()
+    {
+        Persist();
+        ResolveSource();
+        Tick();
+        if (WantsLocation) _ = UpdateLocationAsync();
+    }
+
+    /// <summary>The user picked a spot on the map as "my location".</summary>
+    public async Task SetManualLocationAsync(MapLocation pick)
+    {
+        Config.Location.Auto = false;
+        Config.Location.Latitude = pick.Lat;
+        Config.Location.Longitude = pick.Lon;
+        Config.Location.Name = pick.Label;
+        if (Config.Times == TimesSource.Mosque) Config.Times = TimesSource.Location;
+        Persist();
+        ResolveSource();
+        Tick();
+        if (pick.Label.Length == 0) await NameLocationAsync(new GeoPoint(pick.Lat, pick.Lon));
     }
 
     public void Start()
@@ -144,101 +203,301 @@ public sealed class AppState : INotifyPropertyChanged
         _tick.Interval = TimeSpan.FromSeconds(1);
         _tick.Tick += (_, _) => Tick();
         _tick.Start();
+        _locationTimer = _dispatcher.CreateTimer();
+        _locationTimer.Interval = TimeSpan.FromMinutes(30);
+        _locationTimer.Tick += (_, _) => _ = UpdateLocationAsync();
+        _locationTimer.Start();
+        NetworkInformation.NetworkStatusChanged += _ => _dispatcher.TryEnqueue(() =>
+        {
+            Log.Information("Network status changed; retrying soon if the last refresh failed");
+            _backoff.RetrySoon(DateTimeOffset.Now);
+            _ = UpdateLocationAsync();
+        });
+        Tick();
         _ = RefreshAsync(force: true);
-        if (Config.Mosque is null)
+        _ = UpdateLocationAsync();
+        if (!IsConfigured)
             Views.MapWindow.Show();
         else if (!Config.Notifications.SetupCompleted)
             Views.SettingsWindow.Show();
     }
 
-    public async Task ApplyMosqueAsync(string slug, string label, bool favorite)
+    public async Task ApplyMosqueAsync(MapSelect pick)
     {
-        Config.Mosque = new MosqueSelection { MasjidId = slug, DisplayName = label };
-        if (favorite)
+        var sel = new MosqueSelection
         {
-            var err = Config.AddFavorite(new MosqueSelection { MasjidId = slug, DisplayName = label });
-            if (err != null) _ = AppDialog.ShowAsync(LocaleManager.Default.Get("UI.Favorites"), err);
-        }
+            MasjidId = pick.Slug,
+            DisplayName = pick.Label,
+            Latitude = pick.Lat,
+            Longitude = pick.Lon,
+            Provider = pick.Provider,
+            Website = pick.Website,
+            // Keep iqama times the user already typed for this mosque.
+            Iqama = Config.Favorites.Append(Config.Mosque).FirstOrDefault(m => m?.MasjidId == pick.Slug)?.Iqama,
+        };
+        Config.Mosque = sel;
+        if (pick.Favorite && Config.AddFavorite(sel) == FavoriteResult.Full)
+            _ = AppDialog.ShowAsync(LocaleManager.Default.Get("UI.Favorites"), LocaleManager.Default.Get("UI.FavoritesFull"));
         Persist();
-        await RefreshAsync(force: true);
+        await SwitchToCurrentMosqueAsync();
     }
 
     public async Task SwitchFavoriteAsync(MosqueSelection sel)
     {
-        Config.Mosque = new MosqueSelection { MasjidId = sel.MasjidId, DisplayName = sel.DisplayName };
+        Config.Mosque = sel.Copy();
         Persist();
+        await SwitchToCurrentMosqueAsync();
+    }
+
+    private async Task SwitchToCurrentMosqueAsync()
+    {
+        _backoff.Succeeded();
+        UseTimetable(Config.Mosque is { Provider: MosqueProvider.Mawaqit } m ? _store.Load(m.MasjidId) : null);
+        Tick();
         await RefreshAsync(force: true);
     }
 
-    public MawaqitClient MapClient => _publicMap;
+    public MawaqitClient MapClient => _client;
+
+    /// <summary>Where the Qibla is computed from: where the user is when known, else the mosque.</summary>
+    public MosqueSelection? QiblaOrigin => Config.Location.Point is { } here
+        ? new MosqueSelection { DisplayName = MosqueLabelForLocation, Latitude = here.Latitude, Longitude = here.Longitude }
+        : Config.Mosque is { HasLocation: true } m ? m : null;
+
+    /// <summary>The mosque's own iqama times, for mosques without a Mawaqit timetable.</summary>
+    public void ApplyMosqueIqama(DayIqama? iqama)
+    {
+        if (Config.Mosque is not { } m) return;
+        m.Iqama = iqama;
+        foreach (var fav in Config.Favorites.Where(f => f.MasjidId == m.MasjidId)) fav.Iqama = iqama;
+        Persist();
+        ResolveSource();
+        Tick();
+    }
+
+    private bool WantsLocation => Config.Times != TimesSource.Mosque && Config.Location.Auto;
+
+    /// <summary>Follow Windows location services when the user asked for times where they are.</summary>
+    public async Task UpdateLocationAsync()
+    {
+        if (_locating || !WantsLocation) return;
+        _locating = true;
+        try
+        {
+            var here = await LocationService.TryGetAsync();
+            Raise(nameof(LocationStatus));
+            if (here is not { } p) return;
+            var old = Config.Location.Point;
+            // City-level moves only; Wi-Fi fixes wander by a few hundred metres.
+            if (old is { } o && Qibla.GreatCircleKm(o.Latitude, o.Longitude, p.Latitude, p.Longitude) < 2
+                && !string.IsNullOrWhiteSpace(Config.Location.Name)) return;
+            Log.Information("Location updated to {Lat:0.###}, {Lon:0.###}", p.Latitude, p.Longitude);
+            Config.Location.Latitude = p.Latitude;
+            Config.Location.Longitude = p.Longitude;
+            Config.Location.Name = "";
+            Persist();
+            ResolveSource();
+            Tick();
+            await NameLocationAsync(p);
+        }
+        finally
+        {
+            _locating = false;
+        }
+    }
+
+    private async Task NameLocationAsync(GeoPoint p)
+    {
+        try
+        {
+            if (await _client.PlaceNameAsync(p) is { } name && Config.Location.Point == p)
+            {
+                Config.Location.Name = name;
+                Persist();
+                ResolveSource();
+            }
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
+        {
+            // Offline: keep showing coordinates until the next update can name the place.
+            Log.Information(ex, "Could not name the location yet");
+        }
+    }
 
     public async Task RefreshAsync(bool force)
     {
         if (_fetching) return;
-        if (!force && DateTime.UtcNow - _lastFetch < TimeSpan.FromMinutes(45)) return;
         var mosque = Config.Mosque;
-        if (mosque is null)
+        // Only Mawaqit mosques have a timetable to download; everything else is calculated offline.
+        if (mosque is not { Provider: MosqueProvider.Mawaqit })
         {
-            Status = "Choose a mosque";
-            ChipName = "Mawaqit";
-            ChipCountdown = "setup";
-            TrackingLabel = "";
-            NextHeadline = "";
-            Raise(nameof(Status), nameof(ChipName), nameof(ChipCountdown), nameof(ChipLine),
-                nameof(TrackingLabel), nameof(NextHeadline));
+            ResolveSource();
+            Tick();
             return;
         }
+        if (!force && !_backoff.IsDue(DateTimeOffset.Now)
+            && DateTimeOffset.Now - _lastSuccess < RefreshEvery) return;
 
         _fetching = true;
         IsRefreshing = true;
-        HasError = false;
-        Raise(nameof(IsRefreshing), nameof(HasError));
+        Raise(nameof(IsRefreshing));
         try
         {
-            var now = DateTime.Now;
-            var (times, iqama) = await _client.FetchDayAsync(mosque.MasjidId, now);
-            _today = Schedule.Build(now.Date, times, iqama);
-            _lastFetch = DateTime.UtcNow;
+            var (fresh, report) = await _client.FetchTimetableAsync(mosque.MasjidId);
+            if (Config.Mosque?.MasjidId != mosque.MasjidId) return; // user switched mosque meanwhile
+
+            var table = report switch
+            {
+                { CalendarTrusted: true } => fresh,
+                // Only the published day was usable: add it to the saved year.
+                { LiveTimesMatched: not null } => MergeIntoCache(fresh),
+                // Part of the calendar failed validation: a saved year beats it; otherwise use the valid days.
+                _ => _table is { } old && old.Slug == fresh.Slug && old.Days.Count > fresh.Days.Count ? old : fresh,
+            };
+            if (MosqueSlug.IsValid(table.Slug)) _store.Save(table);
+            BackfillLocation(fresh);
+            UseTimetable(table);
+
+            _backoff.Succeeded();
+            _lastSuccess = DateTimeOffset.Now;
+            HasError = false;
             Status = mosque.DisplayName;
-            Tick();
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "refresh failed");
-            HasError = true;
+            _backoff.Failed(DateTimeOffset.Now);
+            Log.Warning(ex, "Refresh failed (attempt {Failures}); next try at {Next}", _backoff.Failures, _backoff.NextAttempt);
             Status = ex.Message;
-            ChipCountdown = "error";
-            Raise(nameof(HasError), nameof(Status), nameof(ChipCountdown), nameof(ChipLine),
-                nameof(TrackingLabel), nameof(NextHeadline));
+            ResolveSource();
+            HasError = _today.Count == 0;
         }
         finally
         {
             _fetching = false;
             IsRefreshing = false;
-            Raise(nameof(IsRefreshing));
+            UpdateFreshness();
+            Raise(nameof(IsRefreshing), nameof(HasError), nameof(Status));
+            Tick();
         }
+    }
+
+    /// <summary>The page's calendar was not trusted: keep the saved year and only take the
+    /// day Mawaqit published, so one odd fetch cannot wipe the offline cache.</summary>
+    private MosqueTimetable MergeIntoCache(MosqueTimetable fresh)
+    {
+        if (_table is not { } old || old.Slug != fresh.Slug) return fresh;
+        foreach (var (key, day) in fresh.Days) old.Days[key] = day;
+        old.Name = fresh.Name;
+        old.Latitude ??= fresh.Latitude;
+        old.Longitude ??= fresh.Longitude;
+        return old;
+    }
+
+    private void BackfillLocation(MosqueTimetable table)
+    {
+        if (table.Latitude is not { } lat || table.Longitude is not { } lon) return;
+        var changed = false;
+        foreach (var sel in Config.Favorites.Append(Config.Mosque).OfType<MosqueSelection>())
+        {
+            if (sel.MasjidId != table.Slug || sel.HasLocation) continue;
+            sel.Latitude = lat;
+            sel.Longitude = lon;
+            changed = true;
+        }
+        if (changed) Persist();
+    }
+
+    private void UseTimetable(MosqueTimetable? table)
+    {
+        _table = table;
+        ResolveSource();
+    }
+
+    /// <summary>Decide where today's times come from and rebuild the schedule from it.</summary>
+    private void ResolveSource()
+    {
+        var hasTable = _table is { } t && t.Slug == Config.Mosque?.MasjidId;
+        _active = SourcePicker.Pick(Config, hasTable);
+        var (method, asr) = EffectiveCalculation;
+        var highLat = Config.Calculation.HighLatitude;
+        // Days the timetable lacks (unpublished or rejected) are calculated for the mosque instead of left blank.
+        ITimesSource? mosqueCalc = Config.Mosque?.Point is { } mp
+            ? new CalculatedTimes(mp, method, asr, highLat, TimeZoneInfo.Local)
+            : null;
+        _source = _active switch
+        {
+            { Kind: ActiveKind.MosqueTimetable } when _table is { } table => new FallbackTimes(table, mosqueCalc),
+            { Kind: ActiveKind.MosqueCalculated, Point: { } p } =>
+                new CalculatedTimes(p, method, asr, highLat, TimeZoneInfo.Local, Config.Mosque?.Iqama),
+            { Kind: ActiveKind.LocationCalculated, Point: { } p } =>
+                new CalculatedTimes(p, method, asr, highLat, TimeZoneInfo.Local),
+            _ => null,
+        };
+
+        var loc = LocaleManager.Default;
+        var calculated = string.Format(loc.Get("UI.CalculatedWith"), MethodNames.Short(method));
+        SourceDetail = _active switch
+        {
+            { Kind: ActiveKind.LocationCalculated, AwayFromMosqueKm: { } km } =>
+                string.Format(loc.Get("UI.AwayFromMosque"), km.ToString("N0", loc.CurrentCulture), MosqueName) + " · " + calculated,
+            { Kind: ActiveKind.MosqueCalculated or ActiveKind.LocationCalculated } => calculated,
+            _ when _source is FallbackTimes f && f.UsesFallback(DateOnly.FromDateTime(DateTime.Now)) =>
+                string.Format(loc.Get("UI.TimetableGap"), calculated),
+            _ => "",
+        };
+
+        _builtFor = default;
+        _slotsFingerprint = "";
+        UpdateFreshness();
+        Raise(nameof(MosqueLabel), nameof(MosqueName), nameof(SourceDetail), nameof(IsConfigured), nameof(LocationStatus));
+    }
+
+    private void UpdateFreshness()
+    {
+        string label = "";
+        if (_active.Kind == ActiveKind.MosqueTimetable && _table is { } t
+            && (_backoff.Failures > 0 || DateTimeOffset.Now - t.FetchedAt > StaleAfter))
+        {
+            var when = t.FetchedAt.ToLocalTime().ToString("d MMM", LocaleManager.Default.CurrentCulture);
+            label = string.Format(LocaleManager.Default.Get("UI.SavedTimes"), when);
+        }
+        if (label == FreshnessLabel) return;
+        FreshnessLabel = label;
+        Raise(nameof(FreshnessLabel));
+    }
+
+    private void BuildDays(DateOnly today)
+    {
+        _builtFor = today;
+        _window = new List<PrayerSlot>();
+        if (_source is { } source)
+        {
+            foreach (var d in new[] { today.AddDays(-1), today, today.AddDays(1) })
+                if (source.TimesFor(d) is { } times)
+                    _window.AddRange(Schedule.Build(d, times, source.IqamaFor(d), TimeZoneInfo.Local));
+        }
+        _today = _window.Where(s => s.Date == today).ToList();
+        _ledger.PruneBefore(today.AddDays(-2));
     }
 
     private void Tick()
     {
-        if (_today.Count == 0)
-        {
-            RebuildRows(null);
-            return;
-        }
-        var now = DateTime.Now;
-        var next = Schedule.Next(_today, now, Config.Countdown);
-        string name;
-        string time;
-        string countdown;
-        string tracking;
-        string headline;
+        var now = DateTimeOffset.Now;
+        var today = DateOnly.FromDateTime(now.LocalDateTime);
+        if (today != _builtFor) BuildDays(today);
+
+        if (!_fetching && Config.Mosque is { Provider: MosqueProvider.Mawaqit }
+            && (_backoff.IsDue(now) || (_backoff.Failures == 0 && _lastSuccess != DateTimeOffset.MinValue && now - _lastSuccess >= RefreshEvery)))
+            _ = RefreshAsync(force: false);
+
+        var next = Schedule.Next(_window, now, Config.Countdown);
+        string name, time, countdown, tracking, headline;
         bool near;
         if (next is null)
         {
             name = "Mawaqit";
             time = "";
-            countdown = "--";
+            countdown = _today.Count == 0 ? (HasError ? "error" : "…") : "--";
             tracking = "";
             headline = LocaleManager.Default.Get("UI.NoUpcoming");
             near = false;
@@ -249,12 +508,12 @@ public sealed class AppState : INotifyPropertyChanged
             var prayer = loc.Prayer(next.Kind.ToString());
             var phase = next.ToIqama ? loc.Get("UI.Iqama") : loc.Get("UI.Adhan");
             name = next.ToIqama ? $"{prayer} {phase}" : prayer;
-            time = Schedule.FormatHhmm(next.At.TimeOfDay);
+            time = next.ToIqama ? next.Slot.IqamaDisplay ?? "" : next.Slot.AdhanDisplay;
             countdown = Schedule.FormatCountdown(next.Remaining);
             tracking = $"{prayer} {phase}";
             headline = $"{prayer} · {time}";
-            near = next.Remaining.TotalMinutes <= Config.Notifications.MinutesBefore
-                   && Config.Notifications.MinutesBefore > 0;
+            near = Config.Notifications.MinutesBefore > 0
+                   && next.Remaining.TotalMinutes <= Config.Notifications.MinutesBefore;
         }
 
         var changed = new List<string>();
@@ -270,16 +529,21 @@ public sealed class AppState : INotifyPropertyChanged
             Raise(changed.ToArray());
         }
 
+        var progress = next is null ? 0 : Schedule.Progress(_window, now, next);
+        if (Math.Abs(progress - NextProgress) > 0.002)
+        {
+            NextProgress = progress;
+            Raise(nameof(NextProgress));
+        }
+
         RebuildRows(next);
         RaiseAlerts(now);
-        if (now.Date != _lastFetch.ToLocalTime().Date && _lastFetch != DateTime.MinValue)
-            _ = RefreshAsync(force: true);
     }
 
     private void RebuildRows(NextPrayer? next)
     {
         var fp = string.Join('|', _today.Select(s => $"{s.Kind}:{s.AdhanDisplay}:{s.IqamaDisplay}"))
-                 + $":{next?.Kind}:{next?.ToIqama}:{LocaleManager.Default.Resolved}";
+                 + $":{next?.Slot.Date}:{next?.Kind}:{next?.ToIqama}:{LocaleManager.Default.Resolved}";
         if (fp == _slotsFingerprint) return;
         _slotsFingerprint = fp;
         Slots.Clear();
@@ -287,24 +551,34 @@ public sealed class AppState : INotifyPropertyChanged
         {
             Slots.Add(new PrayerRow
             {
-                Name = s.Label,
+                Name = LocaleManager.Default.Prayer(s.Kind.ToString()),
                 Adhan = s.AdhanDisplay,
                 Iqama = s.IqamaDisplay ?? "—",
-                IsNext = next != null && s.Kind == next.Kind
+                IsNext = next != null && ReferenceEquals(s, next.Slot)
             });
         }
     }
 
-    private void RaiseAlerts(DateTime now)
+    private void RaiseAlerts(DateTimeOffset now)
     {
-        if (!Config.Notifications.Enabled || _today.Count == 0) return;
-        foreach (var alert in Alerts.Pending(now.Date, _today, now, Config.Notifications, _notified))
+        if (!Config.Notifications.Enabled || _window.Count == 0) return;
+        var loc = LocaleManager.Default;
+        foreach (var alert in Alerts.Pending(_window, now, Config.Notifications, _ledger).ToList())
         {
-            _notified.Add(alert.Key);
-            NotificationService.Show(alert.Title, alert.Body);
+            _ledger.Mark(alert);
+            var s = alert.Slot;
+            var prayer = loc.Prayer(s.Kind.ToString());
+            var (title, body) = alert.Phase switch
+            {
+                AlertPhase.Before => (string.Format(loc.Get("Alert.Before"), prayer, Config.Notifications.MinutesBefore),
+                                      string.Format(loc.Get("Alert.BeforeBody"), s.AdhanDisplay)),
+                AlertPhase.Iqama => (string.Format(loc.Get("Alert.Iqama"), prayer),
+                                     string.Format(loc.Get("Alert.IqamaBody"), s.IqamaDisplay)),
+                _ => (string.Format(loc.Get("Alert.Adhan"), prayer),
+                      string.Format(loc.Get("Alert.AdhanBody"), s.AdhanDisplay)),
+            };
+            NotificationService.Show(title, body);
         }
-        if (_notified.Count > 80)
-            _notified.Clear();
     }
 
     private void RaiseDisplayMode()

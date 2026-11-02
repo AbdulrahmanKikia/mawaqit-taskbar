@@ -1,0 +1,1356 @@
+{
+"source": "api.aladhan.com /v1/timings, latitudeAdjustmentMethod=3 (angle-based)",
+"captured": "2026-11-02",
+"rows": [
+{
+"city": "Toronto",
+"lat": 43.6532,
+"lon": -79.3832,
+"method": 2,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "America/Toronto",
+"hijriMonth": 5,
+"times": [
+"05:34",
+"06:55",
+"12:01",
+"14:44",
+"17:07",
+"18:27"
+]
+},
+{
+"city": "Toronto",
+"lat": 43.6532,
+"lon": -79.3832,
+"method": 2,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "America/Toronto",
+"hijriMonth": 9,
+"times": [
+"06:24",
+"07:42",
+"13:28",
+"16:39",
+"19:15",
+"20:34"
+]
+},
+{
+"city": "Toronto",
+"lat": 43.6532,
+"lon": -79.3832,
+"method": 2,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "America/Toronto",
+"hijriMonth": 1,
+"times": [
+"03:46",
+"05:36",
+"13:19",
+"17:26",
+"21:03",
+"22:53"
+]
+},
+{
+"city": "Toronto",
+"lat": 43.6532,
+"lon": -79.3832,
+"method": 2,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "America/Toronto",
+"hijriMonth": 7,
+"times": [
+"06:21",
+"07:48",
+"12:16",
+"14:26",
+"16:44",
+"18:10"
+]
+},
+{
+"city": "Toronto",
+"lat": 43.6532,
+"lon": -79.3832,
+"method": 2,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "America/Toronto",
+"hijriMonth": 9,
+"times": [
+"05:50",
+"07:09",
+"12:31",
+"15:25",
+"17:54",
+"19:13"
+]
+},
+{
+"city": "London",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Europe/London",
+"hijriMonth": 5,
+"times": [
+"05:02",
+"06:56",
+"11:44",
+"14:07",
+"16:32",
+"18:19"
+]
+},
+{
+"city": "London",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Europe/London",
+"hijriMonth": 9,
+"times": [
+"04:39",
+"06:31",
+"12:11",
+"15:10",
+"17:53",
+"19:38"
+]
+},
+{
+"city": "London",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Europe/London",
+"hijriMonth": 1,
+"times": [
+"02:31",
+"04:43",
+"13:02",
+"17:25",
+"21:22",
+"23:27"
+]
+},
+{
+"city": "London",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Europe/London",
+"hijriMonth": 7,
+"times": [
+"05:59",
+"08:04",
+"11:59",
+"13:38",
+"15:53",
+"17:51"
+]
+},
+{
+"city": "London",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Europe/London",
+"hijriMonth": 9,
+"times": [
+"05:14",
+"07:05",
+"12:14",
+"14:50",
+"17:24",
+"19:09"
+]
+},
+{
+"city": "London-Hanafi",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 1,
+"date": "2026-11-02",
+"timezone": "Europe/London",
+"hijriMonth": 5,
+"times": [
+"05:02",
+"06:56",
+"11:44",
+"14:44",
+"16:32",
+"18:19"
+]
+},
+{
+"city": "London-Hanafi",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 1,
+"date": "2026-03-08",
+"timezone": "Europe/London",
+"hijriMonth": 9,
+"times": [
+"04:39",
+"06:31",
+"12:11",
+"15:58",
+"17:53",
+"19:38"
+]
+},
+{
+"city": "London-Hanafi",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 1,
+"date": "2026-06-21",
+"timezone": "Europe/London",
+"hijriMonth": 1,
+"times": [
+"02:31",
+"04:43",
+"13:02",
+"18:40",
+"21:22",
+"23:27"
+]
+},
+{
+"city": "London-Hanafi",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 1,
+"date": "2026-12-21",
+"timezone": "Europe/London",
+"hijriMonth": 7,
+"times": [
+"05:59",
+"08:04",
+"11:59",
+"14:07",
+"15:53",
+"17:51"
+]
+},
+{
+"city": "London-Hanafi",
+"lat": 51.5074,
+"lon": -0.1278,
+"method": 3,
+"school": 1,
+"date": "2027-02-20",
+"timezone": "Europe/London",
+"hijriMonth": 9,
+"times": [
+"05:14",
+"07:05",
+"12:14",
+"15:32",
+"17:24",
+"19:09"
+]
+},
+{
+"city": "Oslo",
+"lat": 59.9139,
+"lon": 10.7522,
+"method": 3,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Europe/Oslo",
+"hijriMonth": 5,
+"times": [
+"05:18",
+"07:41",
+"12:01",
+"13:54",
+"16:19",
+"18:34"
+]
+},
+{
+"city": "Oslo",
+"lat": 59.9139,
+"lon": 10.7522,
+"method": 3,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Europe/Oslo",
+"hijriMonth": 9,
+"times": [
+"04:35",
+"06:55",
+"12:28",
+"15:08",
+"18:02",
+"20:13"
+]
+},
+{
+"city": "Oslo",
+"lat": 59.9139,
+"lon": 10.7522,
+"method": 3,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Europe/Oslo",
+"hijriMonth": 1,
+"times": [
+"02:21",
+"03:54",
+"13:19",
+"18:00",
+"22:44",
+"00:12"
+]
+},
+{
+"city": "Oslo",
+"lat": 59.9139,
+"lon": 10.7522,
+"method": 3,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Europe/Oslo",
+"hijriMonth": 7,
+"times": [
+"06:32",
+"09:18",
+"12:15",
+"13:07",
+"15:12",
+"17:49"
+]
+},
+{
+"city": "Oslo",
+"lat": 59.9139,
+"lon": 10.7522,
+"method": 3,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Europe/Oslo",
+"hijriMonth": 9,
+"times": [
+"05:23",
+"07:42",
+"12:31",
+"14:38",
+"17:21",
+"19:32"
+]
+},
+{
+"city": "Makkah",
+"lat": 21.4225,
+"lon": 39.8262,
+"method": 4,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Asia/Riyadh",
+"hijriMonth": 5,
+"times": [
+"05:06",
+"06:24",
+"12:04",
+"15:20",
+"17:44",
+"19:14"
+]
+},
+{
+"city": "Makkah",
+"lat": 21.4225,
+"lon": 39.8262,
+"method": 4,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Asia/Riyadh",
+"hijriMonth": 9,
+"times": [
+"05:20",
+"06:36",
+"12:31",
+"15:53",
+"18:28",
+"20:28"
+]
+},
+{
+"city": "Makkah",
+"lat": 21.4225,
+"lon": 39.8262,
+"method": 4,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Asia/Riyadh",
+"hijriMonth": 1,
+"times": [
+"04:11",
+"05:39",
+"12:22",
+"15:42",
+"19:06",
+"20:36"
+]
+},
+{
+"city": "Makkah",
+"lat": 21.4225,
+"lon": 39.8262,
+"method": 4,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Asia/Riyadh",
+"hijriMonth": 7,
+"times": [
+"05:32",
+"06:54",
+"12:19",
+"15:23",
+"17:44",
+"19:14"
+]
+},
+{
+"city": "Makkah",
+"lat": 21.4225,
+"lon": 39.8262,
+"method": 4,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Asia/Riyadh",
+"hijriMonth": 9,
+"times": [
+"05:32",
+"06:48",
+"12:34",
+"15:52",
+"18:21",
+"20:21"
+]
+},
+{
+"city": "Cairo",
+"lat": 30.0444,
+"lon": 31.2357,
+"method": 5,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Africa/Cairo",
+"hijriMonth": 5,
+"times": [
+"04:41",
+"06:10",
+"11:39",
+"14:46",
+"17:07",
+"18:26"
+]
+},
+{
+"city": "Cairo",
+"lat": 30.0444,
+"lon": 31.2357,
+"method": 5,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Africa/Cairo",
+"hijriMonth": 9,
+"times": [
+"04:47",
+"06:13",
+"12:06",
+"15:26",
+"17:59",
+"19:16"
+]
+},
+{
+"city": "Cairo",
+"lat": 30.0444,
+"lon": 31.2357,
+"method": 5,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Africa/Cairo",
+"hijriMonth": 1,
+"times": [
+"04:08",
+"05:54",
+"12:57",
+"16:32",
+"19:59",
+"21:33"
+]
+},
+{
+"city": "Cairo",
+"lat": 30.0444,
+"lon": 31.2357,
+"method": 5,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Africa/Cairo",
+"hijriMonth": 7,
+"times": [
+"05:14",
+"06:47",
+"11:53",
+"14:41",
+"16:59",
+"18:23"
+]
+},
+{
+"city": "Cairo",
+"lat": 30.0444,
+"lon": 31.2357,
+"method": 5,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Africa/Cairo",
+"hijriMonth": 9,
+"times": [
+"05:04",
+"06:31",
+"12:09",
+"15:20",
+"17:47",
+"19:05"
+]
+},
+{
+"city": "Karachi",
+"lat": 24.8607,
+"lon": 67.0011,
+"method": 1,
+"school": 1,
+"date": "2026-11-02",
+"timezone": "Asia/Karachi",
+"hijriMonth": 5,
+"times": [
+"05:22",
+"06:40",
+"12:16",
+"16:15",
+"17:51",
+"19:09"
+]
+},
+{
+"city": "Karachi",
+"lat": 24.8607,
+"lon": 67.0011,
+"method": 1,
+"school": 1,
+"date": "2026-03-08",
+"timezone": "Asia/Karachi",
+"hijriMonth": 9,
+"times": [
+"05:33",
+"06:48",
+"12:43",
+"16:58",
+"18:38",
+"19:53"
+]
+},
+{
+"city": "Karachi",
+"lat": 24.8607,
+"lon": 67.0011,
+"method": 1,
+"school": 1,
+"date": "2026-06-21",
+"timezone": "Asia/Karachi",
+"hijriMonth": 1,
+"times": [
+"04:14",
+"05:43",
+"12:34",
+"17:16",
+"19:24",
+"20:53"
+]
+},
+{
+"city": "Karachi",
+"lat": 24.8607,
+"lon": 67.0011,
+"method": 1,
+"school": 1,
+"date": "2026-12-21",
+"timezone": "Asia/Karachi",
+"hijriMonth": 7,
+"times": [
+"05:51",
+"07:12",
+"12:30",
+"16:12",
+"17:48",
+"19:09"
+]
+},
+{
+"city": "Karachi",
+"lat": 24.8607,
+"lon": 67.0011,
+"method": 1,
+"school": 1,
+"date": "2027-02-20",
+"timezone": "Asia/Karachi",
+"hijriMonth": 9,
+"times": [
+"05:46",
+"07:03",
+"12:46",
+"16:51",
+"18:29",
+"19:45"
+]
+},
+{
+"city": "Istanbul",
+"lat": 41.0082,
+"lon": 28.9784,
+"method": 13,
+"school": 1,
+"date": "2026-11-02",
+"timezone": "Europe/Istanbul",
+"hijriMonth": 5,
+"times": [
+"06:03",
+"07:29",
+"12:53",
+"16:22",
+"18:06",
+"19:27"
+]
+},
+{
+"city": "Istanbul",
+"lat": 41.0082,
+"lon": 28.9784,
+"method": 13,
+"school": 1,
+"date": "2026-03-08",
+"timezone": "Europe/Istanbul",
+"hijriMonth": 9,
+"times": [
+"05:56",
+"07:21",
+"13:20",
+"17:21",
+"19:10",
+"20:29"
+]
+},
+{
+"city": "Istanbul",
+"lat": 41.0082,
+"lon": 28.9784,
+"method": 13,
+"school": 1,
+"date": "2026-06-21",
+"timezone": "Europe/Istanbul",
+"hijriMonth": 1,
+"times": [
+"03:24",
+"05:25",
+"13:11",
+"18:25",
+"20:47",
+"22:38"
+]
+},
+{
+"city": "Istanbul",
+"lat": 41.0082,
+"lon": 28.9784,
+"method": 13,
+"school": 1,
+"date": "2026-12-21",
+"timezone": "Europe/Istanbul",
+"hijriMonth": 7,
+"times": [
+"06:46",
+"08:18",
+"13:07",
+"16:02",
+"17:46",
+"19:13"
+]
+},
+{
+"city": "Istanbul",
+"lat": 41.0082,
+"lon": 28.9784,
+"method": 13,
+"school": 1,
+"date": "2027-02-20",
+"timezone": "Europe/Istanbul",
+"hijriMonth": 9,
+"times": [
+"06:20",
+"07:45",
+"13:23",
+"17:04",
+"18:51",
+"20:11"
+]
+},
+{
+"city": "Paris",
+"lat": 48.8566,
+"lon": 2.3522,
+"method": 12,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Europe/Paris",
+"hijriMonth": 5,
+"times": [
+"06:28",
+"07:39",
+"12:34",
+"15:05",
+"17:29",
+"18:39"
+]
+},
+{
+"city": "Paris",
+"lat": 48.8566,
+"lon": 2.3522,
+"method": 12,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Europe/Paris",
+"hijriMonth": 9,
+"times": [
+"06:11",
+"07:19",
+"13:01",
+"16:05",
+"18:45",
+"19:53"
+]
+},
+{
+"city": "Paris",
+"lat": 48.8566,
+"lon": 2.3522,
+"method": 12,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Europe/Paris",
+"hijriMonth": 1,
+"times": [
+"04:13",
+"05:47",
+"13:52",
+"18:10",
+"21:58",
+"23:32"
+]
+},
+{
+"city": "Paris",
+"lat": 48.8566,
+"lon": 2.3522,
+"method": 12,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Europe/Paris",
+"hijriMonth": 7,
+"times": [
+"07:23",
+"08:41",
+"12:49",
+"14:39",
+"16:56",
+"18:14"
+]
+},
+{
+"city": "Paris",
+"lat": 48.8566,
+"lon": 2.3522,
+"method": 12,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Europe/Paris",
+"hijriMonth": 9,
+"times": [
+"06:42",
+"07:50",
+"13:04",
+"15:46",
+"18:19",
+"19:28"
+]
+},
+{
+"city": "Jakarta",
+"lat": -6.2088,
+"lon": 106.8456,
+"method": 20,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Asia/Jakarta",
+"hijriMonth": 5,
+"times": [
+"04:06",
+"05:26",
+"11:36",
+"14:54",
+"17:46",
+"18:58"
+]
+},
+{
+"city": "Jakarta",
+"lat": -6.2088,
+"lon": 106.8456,
+"method": 20,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Asia/Jakarta",
+"hijriMonth": 9,
+"times": [
+"04:40",
+"05:58",
+"12:03",
+"15:08",
+"18:09",
+"19:18"
+]
+},
+{
+"city": "Jakarta",
+"lat": -6.2088,
+"lon": 106.8456,
+"method": 20,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Asia/Jakarta",
+"hijriMonth": 1,
+"times": [
+"04:38",
+"06:01",
+"11:54",
+"15:16",
+"17:47",
+"19:02"
+]
+},
+{
+"city": "Jakarta",
+"lat": -6.2088,
+"lon": 106.8456,
+"method": 20,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Asia/Jakarta",
+"hijriMonth": 7,
+"times": [
+"04:11",
+"05:36",
+"11:51",
+"15:18",
+"18:05",
+"19:21"
+]
+},
+{
+"city": "Jakarta",
+"lat": -6.2088,
+"lon": 106.8456,
+"method": 20,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Asia/Jakarta",
+"hijriMonth": 9,
+"times": [
+"04:39",
+"05:58",
+"12:06",
+"15:16",
+"18:15",
+"19:25"
+]
+},
+{
+"city": "Sydney",
+"lat": -33.8688,
+"lon": 151.2093,
+"method": 3,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Australia/Sydney",
+"hijriMonth": 5,
+"times": [
+"04:23",
+"05:54",
+"12:39",
+"16:20",
+"19:24",
+"20:50"
+]
+},
+{
+"city": "Sydney",
+"lat": -33.8688,
+"lon": 151.2093,
+"method": 3,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Australia/Sydney",
+"hijriMonth": 9,
+"times": [
+"05:23",
+"06:48",
+"13:06",
+"16:41",
+"19:23",
+"20:43"
+]
+},
+{
+"city": "Sydney",
+"lat": -33.8688,
+"lon": 151.2093,
+"method": 3,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Australia/Sydney",
+"hijriMonth": 1,
+"times": [
+"05:30",
+"07:00",
+"11:57",
+"14:36",
+"16:54",
+"18:18"
+]
+},
+{
+"city": "Sydney",
+"lat": -33.8688,
+"lon": 151.2093,
+"method": 3,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Australia/Sydney",
+"hijriMonth": 7,
+"times": [
+"03:56",
+"05:41",
+"12:53",
+"16:38",
+"20:05",
+"21:43"
+]
+},
+{
+"city": "Sydney",
+"lat": -33.8688,
+"lon": 151.2093,
+"method": 3,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Australia/Sydney",
+"hijriMonth": 9,
+"times": [
+"05:06",
+"06:34",
+"13:09",
+"16:50",
+"19:43",
+"21:06"
+]
+},
+{
+"city": "Lisbon",
+"lat": 38.7223,
+"lon": -9.1393,
+"method": 22,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Europe/Lisbon",
+"hijriMonth": 5,
+"times": [
+"05:34",
+"07:04",
+"12:25",
+"15:13",
+"17:38",
+"18:55"
+]
+},
+{
+"city": "Lisbon",
+"lat": 38.7223,
+"lon": -9.1393,
+"method": 22,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Europe/Lisbon",
+"hijriMonth": 9,
+"times": [
+"05:31",
+"06:59",
+"12:52",
+"16:03",
+"18:40",
+"19:57"
+]
+},
+{
+"city": "Lisbon",
+"lat": 38.7223,
+"lon": -9.1393,
+"method": 22,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Europe/Lisbon",
+"hijriMonth": 1,
+"times": [
+"04:14",
+"06:12",
+"13:43",
+"17:34",
+"21:08",
+"22:25"
+]
+},
+{
+"city": "Lisbon",
+"lat": 38.7223,
+"lon": -9.1393,
+"method": 22,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Europe/Lisbon",
+"hijriMonth": 7,
+"times": [
+"06:15",
+"07:51",
+"12:40",
+"15:01",
+"17:21",
+"18:38"
+]
+},
+{
+"city": "Lisbon",
+"lat": 38.7223,
+"lon": -9.1393,
+"method": 22,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Europe/Lisbon",
+"hijriMonth": 9,
+"times": [
+"05:53",
+"07:22",
+"12:55",
+"15:52",
+"18:22",
+"19:39"
+]
+},
+{
+"city": "Amman",
+"lat": 31.9539,
+"lon": 35.9106,
+"method": 23,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Asia/Amman",
+"hijriMonth": 5,
+"times": [
+"05:31",
+"06:54",
+"12:20",
+"15:24",
+"17:51",
+"19:09"
+]
+},
+{
+"city": "Amman",
+"lat": 31.9539,
+"lon": 35.9106,
+"method": 23,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Asia/Amman",
+"hijriMonth": 9,
+"times": [
+"05:35",
+"06:56",
+"12:47",
+"16:07",
+"18:44",
+"20:00"
+]
+},
+{
+"city": "Amman",
+"lat": 31.9539,
+"lon": 35.9106,
+"method": 23,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Asia/Amman",
+"hijriMonth": 1,
+"times": [
+"03:51",
+"05:31",
+"12:38",
+"16:18",
+"19:50",
+"21:26"
+]
+},
+{
+"city": "Amman",
+"lat": 31.9539,
+"lon": 35.9106,
+"method": 23,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Asia/Amman",
+"hijriMonth": 7,
+"times": [
+"06:05",
+"07:33",
+"12:34",
+"15:18",
+"17:41",
+"19:04"
+]
+},
+{
+"city": "Amman",
+"lat": 31.9539,
+"lon": 35.9106,
+"method": 23,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Asia/Amman",
+"hijriMonth": 9,
+"times": [
+"05:52",
+"07:14",
+"12:50",
+"16:00",
+"18:32",
+"19:48"
+]
+},
+{
+"city": "Tehran",
+"lat": 35.6892,
+"lon": 51.389,
+"method": 7,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Asia/Tehran",
+"hijriMonth": 5,
+"times": [
+"05:02",
+"06:27",
+"11:48",
+"14:47",
+"17:27",
+"18:15"
+]
+},
+{
+"city": "Tehran",
+"lat": 35.6892,
+"lon": 51.389,
+"method": 7,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Asia/Tehran",
+"hijriMonth": 9,
+"times": [
+"05:02",
+"06:25",
+"12:15",
+"15:33",
+"18:24",
+"19:11"
+]
+},
+{
+"city": "Tehran",
+"lat": 35.6892,
+"lon": 51.389,
+"method": 7,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Asia/Tehran",
+"hijriMonth": 1,
+"times": [
+"03:02",
+"04:49",
+"12:06",
+"15:55",
+"19:45",
+"20:44"
+]
+},
+{
+"city": "Tehran",
+"lat": 35.6892,
+"lon": 51.389,
+"method": 7,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Asia/Tehran",
+"hijriMonth": 7,
+"times": [
+"05:40",
+"07:10",
+"12:02",
+"14:37",
+"17:15",
+"18:06"
+]
+},
+{
+"city": "Tehran",
+"lat": 35.6892,
+"lon": 51.389,
+"method": 7,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Asia/Tehran",
+"hijriMonth": 9,
+"times": [
+"05:22",
+"06:46",
+"12:18",
+"15:23",
+"18:09",
+"18:56"
+]
+},
+{
+"city": "Casablanca",
+"lat": 33.5731,
+"lon": -7.5898,
+"method": 21,
+"school": 0,
+"date": "2026-11-02",
+"timezone": "Africa/Casablanca",
+"hijriMonth": 5,
+"times": [
+"05:21",
+"06:50",
+"12:19",
+"15:16",
+"17:42",
+"18:57"
+]
+},
+{
+"city": "Casablanca",
+"lat": 33.5731,
+"lon": -7.5898,
+"method": 21,
+"school": 0,
+"date": "2026-03-08",
+"timezone": "Africa/Casablanca",
+"hijriMonth": 9,
+"times": [
+"05:23",
+"06:50",
+"12:46",
+"16:00",
+"18:38",
+"19:50"
+]
+},
+{
+"city": "Casablanca",
+"lat": 33.5731,
+"lon": -7.5898,
+"method": 21,
+"school": 0,
+"date": "2026-06-21",
+"timezone": "Africa/Casablanca",
+"hijriMonth": 1,
+"times": [
+"04:30",
+"06:21",
+"13:37",
+"17:16",
+"20:49",
+"22:21"
+]
+},
+{
+"city": "Casablanca",
+"lat": 33.5731,
+"lon": -7.5898,
+"method": 21,
+"school": 0,
+"date": "2026-12-21",
+"timezone": "Africa/Casablanca",
+"hijriMonth": 7,
+"times": [
+"05:57",
+"07:31",
+"12:33",
+"15:08",
+"17:31",
+"18:50"
+]
+},
+{
+"city": "Casablanca",
+"lat": 33.5731,
+"lon": -7.5898,
+"method": 21,
+"school": 0,
+"date": "2027-02-20",
+"timezone": "Africa/Casablanca",
+"hijriMonth": 9,
+"times": [
+"05:42",
+"07:10",
+"12:49",
+"15:52",
+"18:24",
+"19:37"
+]
+}
+]
+}

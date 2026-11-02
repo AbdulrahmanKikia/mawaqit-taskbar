@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Core tests and house rules
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # Unit tests for core/ plus tests/Mawaqit.Tests/Architecture/RulesTests.cs
+      # (security, atomic writes, translations, versions, secret scan).
+      - name: Test
+        run: dotnet test tests/Mawaqit.Tests/Mawaqit.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+  app:
+    name: App build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build WinUI host
+        run: dotnet build host-winui/Mawaqit.WinUI.csproj -c Release -p:Platform=x64 -r win-x64

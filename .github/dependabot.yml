@@ -1,0 +1,17 @@
+# CI is the judge: do not merge a bump that turns CI red.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      windows-app-sdk:
+        patterns: ["Microsoft.WindowsAppSDK", "Microsoft.Windows.SDK.BuildTools"]
+      test:
+        patterns: ["xunit*", "Microsoft.NET.Test.Sdk"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
