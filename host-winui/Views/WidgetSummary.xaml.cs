@@ -24,6 +24,7 @@ public sealed partial class WidgetSummary : UserControl
     public event Action<DisplayMode>? DisplayModeChanged;
 
     private DisplayMode _mode = DisplayMode.Expanded;
+    private bool _holdOpenedMenu;
 
     public WidgetSummary()
     {
@@ -33,7 +34,8 @@ public sealed partial class WidgetSummary : UserControl
         {
             if (e.PropertyName is nameof(AppState.ChipName) or nameof(AppState.ChipCountdown)
                 or nameof(AppState.ChipTime) or nameof(AppState.ChipLine) or nameof(AppState.IsConfigured)
-                or nameof(AppState.IsNear) or nameof(AppState.HasError) or nameof(AppState.TrackingLabel))
+                or nameof(AppState.IsNear) or nameof(AppState.HasError) or nameof(AppState.TrackingLabel)
+                or nameof(AppState.Status))
                 UpdateVisuals();
         };
         AppState.Current.DisplayModeChanged += _ => UpdateVisuals();
@@ -115,6 +117,12 @@ public sealed partial class WidgetSummary : UserControl
 
     private void Toggle_Click(object sender, RoutedEventArgs e)
     {
+        if (_holdOpenedMenu)
+        {
+            _holdOpenedMenu = false;
+            toggle.IsChecked = false;
+            return;
+        }
         if (!AppState.Current.IsConfigured)
         {
             MapWindow.Show();
@@ -126,53 +134,16 @@ public sealed partial class WidgetSummary : UserControl
 
     private void Toggle_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        var cfg = AppState.Current.Config;
-        var loc = LocaleManager.Default;
-        var menu = new MenuFlyout();
-        menu.Items.Add(Item(loc.Get("UI.ChangeMosque"), () => MapWindow.Show()));
-        foreach (var fav in cfg.Favorites)
-        {
-            var sel = fav;
-            menu.Items.Add(Item(sel.DisplayName, () => _ = AppState.Current.SwitchFavoriteAsync(sel)));
-        }
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(Item(loc.Get("UI.Qibla"), QiblaWindow.Show));
-        menu.Items.Add(Item(loc.Get("UI.Preferences"), SettingsWindow.Show));
-
-        var sizeMenu = new MenuFlyoutSubItem { Text = loc.Get("UI.ContextMenu.ChipSize") };
-        sizeMenu.Items.Add(CheckedItem(loc.Get("UI.ContextMenu.Compact"), cfg.ChipSize == ChipSize.Compact, () => AppState.Current.ApplyChipSize(ChipSize.Compact)));
-        sizeMenu.Items.Add(CheckedItem(loc.Get("UI.ContextMenu.Expanded"), cfg.ChipSize == ChipSize.Expanded, () => AppState.Current.ApplyChipSize(ChipSize.Expanded)));
-        menu.Items.Add(sizeMenu);
-
-        var countMenu = new MenuFlyoutSubItem { Text = loc.Get("UI.Countdown") };
-        countMenu.Items.Add(CheckedItem(loc.Get("UI.Adhan"), cfg.Countdown == CountdownTarget.Adhan, () => AppState.Current.ApplyCountdown(CountdownTarget.Adhan)));
-        countMenu.Items.Add(CheckedItem(loc.Get("UI.Iqama"), cfg.Countdown == CountdownTarget.Iqama, () => AppState.Current.ApplyCountdown(CountdownTarget.Iqama)));
-        countMenu.Items.Add(CheckedItem(loc.Get("UI.AdhanThenIqama"), cfg.Countdown == CountdownTarget.AdhanThenIqama, () => AppState.Current.ApplyCountdown(CountdownTarget.AdhanThenIqama)));
-        menu.Items.Add(countMenu);
-
-        var hostMenu = new MenuFlyoutSubItem { Text = loc.Get("UI.Placement") };
-        hostMenu.Items.Add(CheckedItem(loc.Get("UI.InTaskbar"), cfg.Host == HostKind.Injected, () => AppState.Current.ApplyHostKind(HostKind.Injected)));
-        hostMenu.Items.Add(CheckedItem(loc.Get("UI.ScreenStrip"), cfg.Host == HostKind.Strip, () => AppState.Current.ApplyHostKind(HostKind.Strip)));
-        menu.Items.Add(hostMenu);
-
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(Item(loc.Get("UI.ContextMenu.Hide"), () => TaskBarManager.HideWidget.Execute(null)));
-        menu.Items.Add(Item(loc.Get("UI.ContextMenu.Quit"), () => App.Quit.Execute(null)));
-        menu.ShowAt(toggle, e.GetPosition(toggle));
+        e.Handled = true;
+        ChipMenu.Show(toggle, e.GetPosition(toggle));
     }
 
-    private static MenuFlyoutItem Item(string text, Action action)
+    private void Toggle_Holding(object sender, HoldingRoutedEventArgs e)
     {
-        var item = new MenuFlyoutItem { Text = text };
-        item.Click += (_, _) => action();
-        return item;
-    }
-
-    private static ToggleMenuFlyoutItem CheckedItem(string text, bool on, Action action)
-    {
-        var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = on };
-        item.Click += (_, _) => action();
-        return item;
+        if (e.HoldingState != Microsoft.UI.Input.HoldingState.Started) return;
+        e.Handled = true;
+        _holdOpenedMenu = true;
+        ChipMenu.Show(toggle, e.GetPosition(toggle));
     }
 
     private void Flyout_Opened(object sender, object e) => toggle.IsChecked = true;

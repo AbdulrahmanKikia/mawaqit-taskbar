@@ -249,6 +249,17 @@ public sealed class AppState : INotifyPropertyChanged
         await SwitchToCurrentMosqueAsync();
     }
 
+    public Task CycleFavoriteAsync(int delta)
+    {
+        var favs = Config.Favorites;
+        if (favs.Count < 2) return Task.CompletedTask;
+        var currentId = Config.Mosque?.MasjidId;
+        var idx = favs.FindIndex(f => f.MasjidId.Equals(currentId, StringComparison.OrdinalIgnoreCase));
+        if (idx < 0) idx = 0;
+        var next = favs[(idx + delta % favs.Count + favs.Count) % favs.Count];
+        return SwitchFavoriteAsync(next);
+    }
+
     private async Task SwitchToCurrentMosqueAsync()
     {
         _backoff.Succeeded();

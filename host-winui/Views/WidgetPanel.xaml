@@ -26,6 +26,10 @@
                 <TextBlock x:Name="nextLabelTb" FontSize="11" FontWeight="SemiBold" CharacterSpacing="60"
                            Foreground="{ThemeResource BrandHeroHighlightBrush}"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0" Margin="0,-6,-8,0" VerticalAlignment="Top">
+                    <Button x:Name="moreBtn" Click="More_Click" Style="{StaticResource QuietIconButton}"
+                            Foreground="{ThemeResource BrandOnPrimaryBrush}">
+                        <FontIcon Glyph="&#xE712;" FontSize="12"/>
+                    </Button>
                     <Button x:Name="refreshBtn" Click="Refresh_Click" Style="{StaticResource QuietIconButton}"
                             Foreground="{ThemeResource BrandOnPrimaryBrush}">
                         <FontIcon Glyph="&#xE72C;" FontSize="12"/>
@@ -52,51 +56,69 @@
         </Border>
 
         <!-- Where the times come from. -->
-        <StackPanel Grid.Row="1" Spacing="1" Padding="4,0">
-            <TextBlock x:Name="mosqueTb" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-            <TextBlock x:Name="sourceTb" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
-            <TextBlock x:Name="freshnessTb" FontSize="11" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
-                       Foreground="{ThemeResource SystemFillColorCautionBrush}"/>
-        </StackPanel>
+        <Grid Grid.Row="1" Padding="4,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="1">
+                <TextBlock x:Name="mosqueTb" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="sourceTb" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
+                <TextBlock x:Name="freshnessTb" FontSize="11" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
+                           Foreground="{ThemeResource SystemFillColorCautionBrush}"/>
+            </StackPanel>
+            <StackPanel x:Name="favNav" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Visibility="Collapsed">
+                <Button x:Name="prevFavBtn" Click="PrevFav_Click" Style="{StaticResource QuietIconButton}"
+                        Padding="2,2" MinWidth="24" MinHeight="24">
+                    <FontIcon Glyph="&#xE76B;" FontSize="10"/>
+                </Button>
+                <Button x:Name="nextFavBtn" Click="NextFav_Click" Style="{StaticResource QuietIconButton}"
+                        Padding="2,2" MinWidth="24" MinHeight="24">
+                    <FontIcon Glyph="&#xE76C;" FontSize="10"/>
+                </Button>
+            </StackPanel>
+        </Grid>
 
         <!-- Today. -->
-        <StackPanel Grid.Row="2" Spacing="2">
-            <Grid ColumnSpacing="4" Padding="10,0,10,2">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="58"/>
-                    <ColumnDefinition Width="58"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock x:Name="prayerCol" FontSize="11" Opacity="0.55"/>
-                <TextBlock x:Name="adhanCol" Grid.Column="1" FontSize="11" Opacity="0.55" TextAlignment="Right"/>
-                <TextBlock x:Name="iqamaCol" Grid.Column="2" FontSize="11" Opacity="0.55" TextAlignment="Right"/>
-            </Grid>
-            <ItemsControl x:Name="list">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Border CornerRadius="8" Background="{ThemeResource BrandPrimarySoftBrush}"
-                                    Visibility="{Binding IsNext, Converter={StaticResource BoolToVis}}"/>
-                            <Border Width="3" Height="16" CornerRadius="1.5" HorizontalAlignment="Left" Margin="3,0,0,0"
-                                    Background="{ThemeResource BrandHighlightBrush}"
-                                    Visibility="{Binding IsNext, Converter={StaticResource BoolToVis}}"/>
-                            <Grid ColumnSpacing="4" Padding="10,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="58"/>
-                                    <ColumnDefinition Width="58"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Adhan}" FontSize="13" VerticalAlignment="Center"
-                                           TextAlignment="Right"/>
-                                <TextBlock Grid.Column="2" Text="{Binding Iqama}" FontSize="13" Opacity="0.65"
-                                           VerticalAlignment="Center" TextAlignment="Right"/>
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="240">
+            <StackPanel Spacing="2">
+                <Grid ColumnSpacing="4" Padding="10,0,10,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="58"/>
+                        <ColumnDefinition Width="58"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="prayerCol" FontSize="11" Opacity="0.55"/>
+                    <TextBlock x:Name="adhanCol" Grid.Column="1" FontSize="11" Opacity="0.55" TextAlignment="Right"/>
+                    <TextBlock x:Name="iqamaCol" Grid.Column="2" FontSize="11" Opacity="0.55" TextAlignment="Right"/>
+                </Grid>
+                <ItemsControl x:Name="list">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Border CornerRadius="8" Background="{ThemeResource BrandPrimarySoftBrush}"
+                                        Visibility="{Binding IsNext, Converter={StaticResource BoolToVis}}"/>
+                                <Border Width="3" Height="16" CornerRadius="1.5" HorizontalAlignment="Left" Margin="3,0,0,0"
+                                        Background="{ThemeResource BrandHighlightBrush}"
+                                        Visibility="{Binding IsNext, Converter={StaticResource BoolToVis}}"/>
+                                <Grid ColumnSpacing="4" Padding="10,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="58"/>
+                                        <ColumnDefinition Width="58"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Adhan}" FontSize="13" VerticalAlignment="Center"
+                                               TextAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Iqama}" FontSize="13" Opacity="0.65"
+                                               VerticalAlignment="Center" TextAlignment="Right"/>
+                                </Grid>
                             </Grid>
-                        </Grid>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
 
         <!-- Footer actions. -->
         <Grid Grid.Row="3" ColumnSpacing="8">

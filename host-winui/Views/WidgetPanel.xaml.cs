@@ -42,9 +42,12 @@ public sealed partial class WidgetPanel : UserControl
         iqamaCol.Text = loc.Get("UI.Iqama");
         qiblaBtnTb.Text = loc.Get("UI.QiblaShort");
         mosqueBtnTb.Text = loc.Get("UI.ChangeMosque");
+        ToolTipService.SetToolTip(moreBtn, loc.Get("UI.More"));
         ToolTipService.SetToolTip(settingsBtn, loc.Get("UI.PreferencesTip"));
         ToolTipService.SetToolTip(refreshBtn, loc.Get("UI.Refresh"));
         ToolTipService.SetToolTip(qiblaBtn, loc.Get("UI.Qibla"));
+        ToolTipService.SetToolTip(prevFavBtn, loc.Get("UI.PrevFavorite"));
+        ToolTipService.SetToolTip(nextFavBtn, loc.Get("UI.NextFavorite"));
 
         nextLabelTb.Text = loc.Get("UI.NextPrayer").ToUpper(loc.CurrentCulture);
         titleTb.Text = string.IsNullOrEmpty(st.ChipName) ? loc.Get("Data.AppName") : st.ChipName;
@@ -54,6 +57,7 @@ public sealed partial class WidgetPanel : UserControl
         mosqueTb.Text = st.MosqueLabel;
         Show(sourceTb, st.SourceDetail);
         Show(freshnessTb, st.FreshnessLabel);
+        favNav.Visibility = st.Config.Favorites.Count >= 2 ? Visibility.Visible : Visibility.Collapsed;
         if (!_listBound)
         {
             list.ItemsSource = st.Slots;
@@ -71,8 +75,11 @@ public sealed partial class WidgetPanel : UserControl
         tb.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    private void More_Click(object sender, RoutedEventArgs e) => ChipMenu.Show(moreBtn);
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Show();
     private void Refresh_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.RefreshAsync(true);
     private void Mosque_Click(object sender, RoutedEventArgs e) => MapWindow.Show();
     private void Qibla_Click(object sender, RoutedEventArgs e) => QiblaWindow.Show();
+    private void PrevFav_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.CycleFavoriteAsync(-1);
+    private void NextFav_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.CycleFavoriteAsync(1);
 }

@@ -49,6 +49,7 @@ namespace Mawaqit.WinUI
         private int currentOffsetX = int.MinValue;
         private int currentOffsetY = 0;
         private bool isDragging;
+        private bool dragUsesTouch;
         private int draggingInnerOffsetX;
         private int lastCursorPositionX;
         private bool initialized;
@@ -436,7 +437,7 @@ namespace Mawaqit.WinUI
             {
                 Log.Information("Start dragging widget");
                 widgetSummary.IsHitTestVisible = false;
-                User32.SetCursorPos(appWindow.Position.X + appWindow.Size.Width / 2, appWindow.Position.Y + appWindow.Size.Height / 2);
+                dragUsesTouch = false;
                 host.Content.KeyUp += Content_KeyUp;
                 host.Content.PointerPressed += Content_PointerPressed;
                 host.Content.PointerReleased += Content_PointerReleased;
@@ -503,11 +504,23 @@ namespace Mawaqit.WinUI
             e.Handled = true;
             host.Content.PointerMoved += Content_PointerMoved;
             host.Content.CapturePointer(e.Pointer);
-            User32.GetCursorPos(out var lpPoint);
+            var point = e.GetCurrentPoint(host.Content);
+            dragUsesTouch = point.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touch
+                || point.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Pen;
+            int screenX;
+            if (dragUsesTouch)
+            {
+                // Content coords are relative to the XAML host; convert to screen via AppWindow.
+                screenX = appWindow.Position.X + (int)Math.Round(point.Position.X * dpiScale);
+            }
+            else
+            {
+                User32.GetCursorPos(out var lpPoint);
+                screenX = lpPoint.x;
+            }
             // The order is VERY IMPORTANT!
-            draggingInnerOffsetX = lpPoint.x - appWindow.Position.X;
-            lpPoint.x -= Display.CachedSettings.Position.X;
-            lastCursorPositionX = lpPoint.x;
+            draggingInnerOffsetX = screenX - appWindow.Position.X;
+            lastCursorPositionX = screenX - Display.CachedSettings.Position.X;
         }
 
         private async void Content_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -521,8 +534,17 @@ namespace Mawaqit.WinUI
             }
 
             var displayPosX = Display.CachedSettings.Position.X;
-            User32.GetCursorPos(out var lpPoint);
-            lpPoint.x -= displayPosX;
+            int pointerX;
+            if (dragUsesTouch)
+            {
+                var point = e.GetCurrentPoint(host.Content);
+                pointerX = appWindow.Position.X + (int)Math.Round(point.Position.X * dpiScale) - displayPosX;
+            }
+            else
+            {
+                User32.GetCursorPos(out var lpPoint);
+                pointerX = lpPoint.x - displayPosX;
+            }
 
             int minCursorX, maxCursorX;
 
@@ -537,13 +559,13 @@ namespace Mawaqit.WinUI
                 maxCursorX = trayNotifyRect.left - WidgetHostWidth + draggingInnerOffsetX;
             }
 
-            lpPoint.x = Math.Clamp(lpPoint.x, minCursorX, maxCursorX);
+            pointerX = Math.Clamp(pointerX, minCursorX, maxCursorX);
 
-            int delta = lpPoint.x - lastCursorPositionX;
+            int delta = pointerX - lastCursorPositionX;
             int newX = delta + appWindow.Position.X - displayPosX;
 
             appWindow.Move(new PointInt32(newX, currentOffsetY));
-            lastCursorPositionX = lpPoint.x;
+            lastCursorPositionX = pointerX;
             InvalidateElementsAlignment(HostPrefs.AutoAlignment);
 
             // This is necessary to make sure the content can raise keyboard events

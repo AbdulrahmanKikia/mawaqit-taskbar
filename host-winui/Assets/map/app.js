@@ -33,7 +33,7 @@
     const h1 = document.getElementById('mapTitle');
     const hint = document.getElementById('mapHint');
     if (h1) h1.textContent = title;
-    if (hint) hint.textContent = t('Map.Hint', 'Click a name on the map or list. Double-click to use it.');
+    if (hint) hint.textContent = t('Map.Hint', 'Tap a name on the map or list, then Use selected or Set as favorite.');
     const searchBtn = document.getElementById('searchBtn');
     const locBtn = document.getElementById('locBtn');
     const refreshBtn = document.getElementById('refreshBtn');

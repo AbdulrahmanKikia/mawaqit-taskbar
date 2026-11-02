@@ -5,7 +5,7 @@
 ; Expects the self-contained WinUI publish at dist\winui\ (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "0.5.0"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
@@ -134,7 +134,7 @@ begin
   GetWindowsVersionEx(Version);
   if Version.Build < 22000 then
   begin
-    MsgBox('Mawaqit Widget 0.4 requires Windows 11 (build 22000 or later).', mbError, MB_OK);
+    MsgBox('Mawaqit Widget 0.5 requires Windows 11 (build 22000 or later).', mbError, MB_OK);
     Result := False;
     Exit;
   end;
