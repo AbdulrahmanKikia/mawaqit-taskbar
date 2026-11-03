@@ -1,0 +1,18 @@
+---
+description: Rebuild and relaunch the WinUI widget after code changes so the user sees the newest build
+alwaysApply: true
+---
+
+# Restart after widget updates
+
+After any change that affects the running WinUI taskbar widget (host-winui, core used by the host, map assets, locales, XAML, config that the UI reads at runtime), **rebuild and relaunch before ending the turn** — do not leave the user on an old `AppData` or stale `dist` binary.
+
+Use from the repo root:
+
+```powershell
+.\scripts\run-widget.ps1
+```
+
+That script stops the running widget, publishes into `dist\winui`, and starts the new exe. Prefer it over `dotnet run` or launching the installed AppData copy.
+
+Skip only when the change is docs/tests/plan-only with no host runtime impact, or when Ask/Plan mode forbids running it.

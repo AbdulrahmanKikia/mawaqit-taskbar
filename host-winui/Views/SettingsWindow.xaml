@@ -106,6 +106,9 @@
                             </RadioButtons>
                         </controls:SettingsCard>
                         <controls:SettingsCard x:Name="countdownHint"/>
+                        <controls:SettingsCard x:Name="menuCountdownCard">
+                            <ToggleSwitch x:Name="menuCountdown" Toggled="Any_Changed"/>
+                        </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
@@ -121,6 +124,9 @@
                             </RadioButtons>
                         </controls:SettingsCard>
                         <controls:SettingsCard x:Name="placeHint"/>
+                        <controls:SettingsCard x:Name="menuPlacementCard">
+                            <ToggleSwitch x:Name="menuPlacement" Toggled="Any_Changed"/>
+                        </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
@@ -134,6 +140,9 @@
                                 <RadioButton x:Name="sizeCompact"/>
                                 <RadioButton x:Name="sizeExpanded"/>
                             </RadioButtons>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="menuChipSizeCard">
+                            <ToggleSwitch x:Name="menuChipSize" Toggled="Any_Changed"/>
                         </controls:SettingsCard>
                         <controls:SettingsCard x:Name="autostartCard">
                             <ToggleSwitch x:Name="autostart" Toggled="Any_Changed"/>

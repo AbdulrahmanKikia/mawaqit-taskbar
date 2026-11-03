@@ -36,6 +36,12 @@ public static class ConfigToml
         cfg.ChipSize = ParseChipSize(model);
         cfg.Host = ParseHost(model);
         cfg.Countdown = ParseCountdown(Str(model, "countdown", "adhan"));
+        if (model.TryGetValue("chip_menu", out var menuObj) && menuObj is TomlTable menuT)
+        {
+            cfg.MenuShowChipSize = Bool(menuT, "show_chip_size", false);
+            cfg.MenuShowCountdown = Bool(menuT, "show_countdown", false);
+            cfg.MenuShowPlacement = Bool(menuT, "show_placement", false);
+        }
         cfg.Language = Str(model, "language", "system");
         cfg.Times = Enum<TimesSource>(Str(model, "times_source", "mosque")) ?? TimesSource.Mosque;
 
@@ -101,6 +107,11 @@ public static class ConfigToml
         sb.AppendLine($"host = {Quote(cfg.Host.ToString().ToLowerInvariant())}");
         sb.AppendLine($"language = {Quote(cfg.Language)}");
         sb.AppendLine($"times_source = {Quote(Name(cfg.Times))}");
+        sb.AppendLine();
+        sb.AppendLine("[chip_menu]");
+        sb.AppendLine($"show_chip_size = {B(cfg.MenuShowChipSize)}");
+        sb.AppendLine($"show_countdown = {B(cfg.MenuShowCountdown)}");
+        sb.AppendLine($"show_placement = {B(cfg.MenuShowPlacement)}");
         if (cfg.Mosque is { } m)
         {
             sb.AppendLine();

@@ -111,6 +111,12 @@ public sealed class AppConfig
     public bool AutoAlignment { get; set; } = true;
     public ChipSize ChipSize { get; set; } = ChipSize.Expanded;
     public HostKind Host { get; set; } = HostKind.Injected;
+    /// <summary>When true, Chip size appears on the chip right-click menu (still always in Preferences).</summary>
+    public bool MenuShowChipSize { get; set; }
+    /// <summary>When true, Countdown appears on the chip right-click menu.</summary>
+    public bool MenuShowCountdown { get; set; }
+    /// <summary>When true, Placement appears on the chip right-click menu.</summary>
+    public bool MenuShowPlacement { get; set; }
     public string Language { get; set; } = "system";
     public TimesSource Times { get; set; } = TimesSource.Mosque;
     public CalculationSettings Calculation { get; set; } = new();

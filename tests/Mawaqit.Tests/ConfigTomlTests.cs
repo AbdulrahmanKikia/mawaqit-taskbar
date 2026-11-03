@@ -16,6 +16,9 @@ public class ConfigTomlTests
             Host = HostKind.Strip,
             Language = "ar",
             CustomPosition = 42,
+            MenuShowChipSize = true,
+            MenuShowCountdown = true,
+            MenuShowPlacement = false,
         };
         cfg.Notifications.MinutesBefore = 15;
         cfg.Notifications.AtIqama = true;
@@ -31,6 +34,9 @@ public class ConfigTomlTests
         Assert.Equal(HostKind.Strip, back.Host);
         Assert.Equal("ar", back.Language);
         Assert.Equal(42, back.CustomPosition);
+        Assert.True(back.MenuShowChipSize);
+        Assert.True(back.MenuShowCountdown);
+        Assert.False(back.MenuShowPlacement);
         Assert.Equal(15u, back.Notifications.MinutesBefore);
         Assert.True(back.Notifications.AtIqama);
         Assert.Equal("mcq-mtl", Assert.Single(back.Favorites).MasjidId);

@@ -51,6 +51,9 @@ public sealed partial class SettingsWindow : Window
         hostKind.SelectedIndex = cfg.Host == HostKind.Strip ? 1 : 0;
         chipSize.SelectedIndex = cfg.ChipSize == ChipSize.Compact ? 0 : 1;
         autostart.IsOn = cfg.StartWithWindows;
+        menuChipSize.IsOn = cfg.MenuShowChipSize;
+        menuCountdown.IsOn = cfg.MenuShowCountdown;
+        menuPlacement.IsOn = cfg.MenuShowPlacement;
         countdown.SelectedIndex = cfg.Countdown switch
         {
             CountdownTarget.Iqama => 1,
@@ -224,17 +227,23 @@ public sealed partial class SettingsWindow : Window
         cdIqama.Content = loc.Get("UI.Iqama");
         cdBoth.Content = loc.Get("UI.AdhanThenIqama");
         countdownHint.Description = loc.Get("UI.AdhanThenIqamaHint");
+        menuCountdownCard.Header = loc.Get("UI.MenuShowInChip");
+        menuCountdownCard.Description = loc.Get("UI.MenuShowInChipDesc");
         placeExp.Header = loc.Get("UI.Placement");
         placeExp.Description = loc.Get("UI.PlacementDesc");
         placeCard.Header = loc.Get("UI.Location");
         hostInject.Content = loc.Get("UI.InTaskbar");
         hostStrip.Content = loc.Get("UI.ScreenStrip");
         placeHint.Description = loc.Get("UI.StripHint");
+        menuPlacementCard.Header = loc.Get("UI.MenuShowInChip");
+        menuPlacementCard.Description = loc.Get("UI.MenuShowInChipDesc");
         chipExp.Header = loc.Get("UI.Chip");
         chipExp.Description = loc.Get("UI.ChipDesc");
         sizeCard.Header = loc.Get("UI.Size");
         sizeCompact.Content = loc.Get("UI.Compact");
         sizeExpanded.Content = loc.Get("UI.Expanded");
+        menuChipSizeCard.Header = loc.Get("UI.MenuShowInChip");
+        menuChipSizeCard.Description = loc.Get("UI.MenuShowInChipDesc");
         autostartCard.Header = loc.Get("UI.Autostart");
         notifExp.Header = loc.Get("UI.Notifications");
         notifExp.Description = loc.Get("UI.NotificationsDesc");
@@ -333,6 +342,9 @@ public sealed partial class SettingsWindow : Window
         };
 
         cfg.StartWithWindows = autostart.IsOn;
+        cfg.MenuShowChipSize = menuChipSize.IsOn;
+        cfg.MenuShowCountdown = menuCountdown.IsOn;
+        cfg.MenuShowPlacement = menuPlacement.IsOn;
         cfg.Notifications.Enabled = nEnable.IsOn;
         cfg.Notifications.AtAdhan = nAdhan.IsOn;
         cfg.Notifications.AtIqama = nIqama.IsOn;

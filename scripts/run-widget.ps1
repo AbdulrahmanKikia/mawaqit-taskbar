@@ -21,7 +21,7 @@ Widget should appear as a chip on the taskbar (next to the clock / Widgets).
 
 Controls:
   Left-click chip      Open / close today's schedule flyout
-  Right-click chip     Menu: Change mosque, Favorites, Preferences, Hide, Quit
+  Right-click chip     Menu: Preferences, Hide, Quit
   System tray icon     Show / Hide / Re-position / Manual position / Quit
 
 Mosque picker needs the Microsoft Edge WebView2 Runtime (usually already on Windows 11).
