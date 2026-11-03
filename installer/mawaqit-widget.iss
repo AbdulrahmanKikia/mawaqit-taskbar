@@ -5,7 +5,7 @@
 ; Expects the self-contained WinUI publish at dist\winui\ (from build-release.ps1).
 
 #define MyAppName "Mawaqit Widget"
-#define MyAppVersion "0.5.0"
+#define MyAppVersion "0.5.1"
 #define MyAppPublisher "Mawaqit Widget"
 #define MyAppURL "https://github.com/AbdulrahmanKikia/mawaqit-taskbar"
 #define MyAppExeName "Mawaqit Widget.exe"
