@@ -58,6 +58,16 @@ public sealed partial class MapWindow : Window
         var folder = Path.Combine(AppContext.BaseDirectory, "Assets", "map");
         web.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "mawaqit.local", folder, CoreWebView2HostResourceAccessKind.Allow);
+#if !DEBUG
+        web.CoreWebView2.Settings.AreDevToolsEnabled = false;
+#endif
+        // Document navigations stay on the virtual host; OSM tiles are resource loads, not navigations.
+        web.CoreWebView2.NavigationStarting += (_, args) =>
+        {
+            if (!IsMapHost(args.Uri))
+                args.Cancel = true;
+        };
+        web.CoreWebView2.NewWindowRequested += (_, args) => args.Handled = true;
         web.CoreWebView2.WebMessageReceived += OnMessage;
         web.CoreWebView2.NavigationCompleted += (_, _) =>
         {
@@ -66,6 +76,10 @@ public sealed partial class MapWindow : Window
         };
         web.Source = new Uri("https://mawaqit.local/mosque_map.html");
     }
+
+    private static bool IsMapHost(string? uri)
+        => Uri.TryCreate(uri, UriKind.Absolute, out var u)
+           && string.Equals(u.Host, "mawaqit.local", StringComparison.OrdinalIgnoreCase);
 
     private void OnThemeChanged()
     {
@@ -100,6 +114,12 @@ public sealed partial class MapWindow : Window
 
     private async void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
+        if (!IsMapHost(args.Source))
+        {
+            Log.Warning("Rejected map message from unexpected source {Source}", args.Source);
+            return;
+        }
+
         MapMessage message;
         try
         {

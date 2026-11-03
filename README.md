@@ -59,6 +59,8 @@ Long-term fix is a paid code-signing certificate (not included yet).
 irm https://raw.githubusercontent.com/AbdulrahmanKikia/mawaqit-taskbar/master/scripts/install-from-release.ps1 | iex
 ```
 
+The script downloads the release asset, verifies its SHA-256 against the published checksum, and only then launches Setup (or Install.bat).
+
 ### Uninstall
 
 - **Setup wizard:** Windows Settings → Apps → **Mawaqit Widget** → Uninstall  

@@ -39,4 +39,16 @@ public static partial class ReleaseCheck
             System.Text.Encoding.ASCII.GetBytes(actual),
             System.Text.Encoding.ASCII.GetBytes(expectedHex.ToLowerInvariant()));
     }
+
+    /// <summary>True when <paramref name="url"/> is a GitHub Releases download for this repo
+    /// (declared asset URL from the API; CDN redirects after GET are fine).</summary>
+    public static bool IsTrustedReleaseDownloadUrl(string? url, string repo)
+    {
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(repo)) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return false;
+        var prefix = $"/{repo.Trim('/')}/releases/download/";
+        return uri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -90,6 +90,16 @@ public class ReleaseCheckTests
         data[0] ^= 1;
         Assert.False(ReleaseCheck.MatchesSha256(new MemoryStream(data), good));
     }
+
+    [Theory]
+    [InlineData("https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/download/v0.5.1/MawaqitWidget-Setup-0.5.1.exe", true)]
+    [InlineData("https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/download/v0.5.1/MawaqitWidget-Setup-0.5.1.exe.sha256", true)]
+    [InlineData("https://github.com/evil/mawaqit-taskbar/releases/download/v0.5.1/MawaqitWidget-Setup-0.5.1.exe", false)]
+    [InlineData("http://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/download/v0.5.1/x.exe", false)]
+    [InlineData("https://evil.example/MawaqitWidget-Setup-0.5.1.exe", false)]
+    [InlineData(null, false)]
+    public void Trusted_release_download_urls(string? url, bool ok)
+        => Assert.Equal(ok, ReleaseCheck.IsTrustedReleaseDownloadUrl(url, "AbdulrahmanKikia/mawaqit-taskbar"));
 }
 
 public class MosqueSlugTests

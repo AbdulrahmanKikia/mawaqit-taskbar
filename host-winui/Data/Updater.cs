@@ -46,10 +46,15 @@ internal static class Updater
     /// then starts it. A missing or wrong checksum means nothing is run.</summary>
     public static async Task DownloadVerifyAndLaunchAsync(LatestRelease release, CancellationToken ct = default)
     {
+        if (!ReleaseCheck.IsTrustedReleaseDownloadUrl(release.SetupUrl, AppState.Repo))
+            throw new UpdateVerificationException("The installer download URL is not a trusted GitHub Releases link.");
+        if (release.Sha256Url is { } sumUrl && !ReleaseCheck.IsTrustedReleaseDownloadUrl(sumUrl, AppState.Repo))
+            throw new UpdateVerificationException("The checksum download URL is not a trusted GitHub Releases link.");
+
         using var http = Http.Create(TimeSpan.FromMinutes(5));
         var expected = release.Sha256;
-        if (expected is null && release.Sha256Url is { } sumUrl)
-            expected = ReleaseCheck.ParseSha256(await http.GetStringAsync(sumUrl, ct));
+        if (expected is null && release.Sha256Url is { } shaUrl)
+            expected = ReleaseCheck.ParseSha256(await http.GetStringAsync(shaUrl, ct));
         if (expected is null)
             throw new UpdateVerificationException("The release has no checksum, so the installer was not run.");
 
@@ -67,6 +72,18 @@ internal static class Updater
                 throw new UpdateVerificationException("The downloaded installer did not match the release checksum and was deleted.");
             }
         }
+
+        // Re-hash immediately before launch so a same-user swap after the first check is caught.
+        await using (var fs = new FileStream(dest, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            if (!ReleaseCheck.MatchesSha256(fs, expected))
+            {
+                fs.Close();
+                File.Delete(dest);
+                throw new UpdateVerificationException("The installer changed after verification and was deleted.");
+            }
+        }
+
         Log.Information("Update {Version} verified (sha256 {Hash}); starting installer", release.Version, expected);
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dest) { UseShellExecute = true });
     }
