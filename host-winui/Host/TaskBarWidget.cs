@@ -60,9 +60,11 @@ namespace Mawaqit.WinUI
         public string DisplayPath => displayPath;
         public WidgetHostCapabilities Capabilities =>
             WidgetHostCapabilities.ClippedByExplorer | WidgetHostCapabilities.SupportsManualPlace;
-        public DisplayEntity Display => DisplayHelper.AvailableDisplays.SingleOrDefault(d => d.Display.DevicePath == displayPath);
+        public DisplayEntity? Display => DisplayHelper.AvailableDisplays.SingleOrDefault(d => d.Display.DevicePath == displayPath);
 
         public event EventHandler Destroying;
+
+        #region Construction and Initialize
 
         public TaskBarWidget(DisplayEntity display)
         {
@@ -121,6 +123,10 @@ namespace Mawaqit.WinUI
             Log.Information("Widget host initialization done");
         }
 
+        #endregion
+
+        #region Taskbar structure watcher
+
         private void TaskbarWatcher_TaskbarChangedNotificationStarted(object sender, TaskbarChangedEventArgs e)
         {
             if (e.IsTaskbarHidden || !initialized || destroyed)
@@ -152,6 +158,10 @@ namespace Mawaqit.WinUI
             }
         }
 
+        #endregion
+
+        #region Inject (SetParent into Shell_TrayWnd)
+
         private void InjectIntoTaskbar()
         {
             Log.Information("Attempting to inject widget into taskbar");
@@ -175,6 +185,10 @@ namespace Mawaqit.WinUI
             
             throw new WidgetNotInjectedException("Could not inject the widget into the taskbar.\nThe taskbar may be in use.");
         }
+
+        #endregion
+
+        #region Show, destroy, chip size
 
         private void WidgetSummary_DisplayModeChanged(DisplayMode displayMode)
             => ApplyChipSize(AppState.Current.Config.ChipSize);
@@ -212,6 +226,10 @@ namespace Mawaqit.WinUI
             appWindow.Destroy();
         }
 
+        #endregion
+
+        #region Position (taskbar alignment and custom offset)
+
         public void UpdatePosition(bool force = false)
             => UpdatePosition(force, TaskbarChangeReason.None);
 
@@ -242,13 +260,19 @@ namespace Mawaqit.WinUI
         private async Task UpdatePositionImpl(TaskbarChangeReason changeReason, bool isCentered, bool isWidgetsEnabled)
         {
             Log.Information($"Updating widget position. Reason={changeReason}, Taskbar centered={isCentered}, Widgets enabled={isWidgetsEnabled}");
-            RECT taskbarRect = GetTaskbarRect();
-            bool pinLeft = AppState.Current.Config.ChipSize == ChipSize.Expanded;
-            int offsetX = pinLeft
-                ? (IsRtlUI ? taskbarRect.right - WidgetHostWidth : 0)
-                : HostPrefs.CustomPosition;
+            if (Display is null)
+            {
+                Log.Warning("Skipping position update: display {Path} is not available", displayPath);
+                return;
+            }
 
-            // -1 means the user didn't set manual position, so we have to find the best one
+            RECT taskbarRect = GetTaskbarRect();
+            // Manual place wins for both compact and expanded; auto (-1) pins expanded to the edge.
+            int offsetX = HostPrefs.CustomPosition;
+            if (offsetX == -1 && AppState.Current.Config.ChipSize == ChipSize.Expanded)
+                offsetX = IsRtlUI ? taskbarRect.right - WidgetHostWidth : 0;
+
+            // -1 means the user didn't set manual position, so we have to find the best one (compact auto)
             if (offsetX == -1)
             {
                 Log.Debug("Updating position in auto mode");
@@ -431,6 +455,10 @@ namespace Mawaqit.WinUI
             return trayNotifyRect;
         }
 
+        #endregion
+
+        #region Manual drag
+
         public void StartDragging()
         {
             if (!isDragging)
@@ -576,6 +604,7 @@ namespace Mawaqit.WinUI
         {
             if (autoAlign)
             {
+                if (Display is null) return;
                 User32.GetWindowRect(hwndShell, out RECT taskbarRect);
                 int taskbarWidth = taskbarRect.right - taskbarRect.left;
                 int widgetMiddleX = appWindow.Position.X + appWindow.Size.Width / 2 - Display.CachedSettings.Position.X;
@@ -591,6 +620,10 @@ namespace Mawaqit.WinUI
 
             widgetSummary.ElementsAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center;
         }
+
+        #endregion
+
+        #region Host window class and WndProc
 
         private void RegisterWindowClass()
         {
@@ -700,6 +733,10 @@ namespace Mawaqit.WinUI
             return User32.DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
 
+        #endregion
+
+        #region Dispose
+
         protected virtual void Dispose(bool disposing)
         {
             if (!disposedValue)
@@ -742,5 +779,7 @@ namespace Mawaqit.WinUI
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
+
+        #endregion
     }
 }

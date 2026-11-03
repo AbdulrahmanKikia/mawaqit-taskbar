@@ -6,6 +6,7 @@ using Windows.Foundation;
 
 namespace Mawaqit.WinUI.Views;
 
+/// <summary>Context menu for the taskbar chip (right-click / long-press / flyout ⋯).</summary>
 internal static class ChipMenu
 {
     public static void Show(FrameworkElement anchor, Point? position = null)
@@ -17,6 +18,7 @@ internal static class ChipMenu
             menu.ShowAt(anchor);
     }
 
+    // --- Build: mosque, favorites, qibla, prefs, size/countdown/placement, hide/quit ---
     public static MenuFlyout Build()
     {
         var cfg = AppState.Current.Config;

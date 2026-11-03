@@ -52,14 +52,20 @@ public sealed partial class MapWindow : Window
         CallJs("__setMode", _mode, start?.Latitude, start?.Longitude);
     }
 
+    #region WebView init and hardening
+
     private async Task InitAsync()
     {
         await web.EnsureCoreWebView2Async();
         var folder = Path.Combine(AppContext.BaseDirectory, "Assets", "map");
         web.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "mawaqit.local", folder, CoreWebView2HostResourceAccessKind.Allow);
+        var settings = web.CoreWebView2.Settings;
+        settings.AreHostObjectsAllowed = false;
+        settings.IsStatusBarEnabled = false;
+        settings.IsZoomControlEnabled = false;
 #if !DEBUG
-        web.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        settings.AreDevToolsEnabled = false;
 #endif
         // Document navigations stay on the virtual host; OSM tiles are resource loads, not navigations.
         web.CoreWebView2.NavigationStarting += (_, args) =>
@@ -80,6 +86,10 @@ public sealed partial class MapWindow : Window
     private static bool IsMapHost(string? uri)
         => Uri.TryCreate(uri, UriKind.Absolute, out var u)
            && string.Equals(u.Host, "mawaqit.local", StringComparison.OrdinalIgnoreCase);
+
+    #endregion
+
+    #region Theme and chrome
 
     private void OnThemeChanged()
     {
@@ -111,6 +121,10 @@ public sealed partial class MapWindow : Window
         var accentText = y > 0.55 ? "#1a1a1a" : "#ffffff";
         CallJs("__setChrome", accent, ThemeHelper.GeneralTheme == ElementTheme.Dark, accentText);
     }
+
+    #endregion
+
+    #region Map IPC (page → host)
 
     private async void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
@@ -185,6 +199,10 @@ public sealed partial class MapWindow : Window
         website = h.Website,
     });
 
+    #endregion
+
+    #region Host → page (CallJs) and locale
+
     /// <summary>The only way the host calls into the page: a named window function with
     /// JSON-encoded arguments, so no value is ever spliced into script text.</summary>
     private void CallJs(string function, params object?[] args)
@@ -226,4 +244,6 @@ public sealed partial class MapWindow : Window
             payload[key] = loc.Get(key);
         CallJs("__setLang", payload);
     }
+
+    #endregion
 }

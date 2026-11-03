@@ -68,4 +68,18 @@ public sealed class MosqueTimetable : ITimesSource
 
     public DayIqama? IqamaFor(DateOnly date)
         => Iqama.TryGetValue(Key(date), out var iq) ? iq : DefaultIqama;
+
+    /// <summary>Keep this year's days and overlay published days/iqama from a partial fetch
+    /// (calendar not fully trusted). Updates <see cref="FetchedAt"/> so the UI freshness
+    /// banner clears after a successful refresh.</summary>
+    public void OverlayPublished(MosqueTimetable fresh)
+    {
+        foreach (var (key, day) in fresh.Days) Days[key] = day;
+        foreach (var (key, iq) in fresh.Iqama) Iqama[key] = iq;
+        if (fresh.DefaultIqama is not null) DefaultIqama = fresh.DefaultIqama;
+        Name = fresh.Name;
+        Latitude ??= fresh.Latitude;
+        Longitude ??= fresh.Longitude;
+        FetchedAt = fresh.FetchedAt;
+    }
 }

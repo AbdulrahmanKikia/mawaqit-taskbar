@@ -20,6 +20,8 @@ public sealed class PrayerRow
 
 public sealed class AppState : INotifyPropertyChanged
 {
+    #region Constants and shared state
+
     public const string Version = "0.5.1";
     public const string Repo = "AbdulrahmanKikia/mawaqit-taskbar";
 
@@ -61,6 +63,10 @@ public sealed class AppState : INotifyPropertyChanged
     private string _slotsFingerprint = "";
     private DisplayMode _lastDisplayMode = DisplayMode.Expanded;
 
+    #endregion
+
+    #region Bound UI properties
+
     public string ChipName { get; private set; } = "Mawaqit";
     public string ChipTime { get; private set; } = "";
     public string ChipCountdown { get; private set; } = "…";
@@ -98,6 +104,10 @@ public sealed class AppState : INotifyPropertyChanged
     /// <summary>How far we are from the previous prayer to the next one, 0..1 (flyout progress bar).</summary>
     public double NextProgress { get; private set; }
 
+    #endregion
+
+    #region Construction
+
     private AppState()
     {
         RefreshCommand = new RelayCommand(_ => _ = RefreshAsync(force: true));
@@ -122,6 +132,10 @@ public sealed class AppState : INotifyPropertyChanged
             ApplyHostKind(kind);
         });
     }
+
+    #endregion
+
+    #region Config load and preferences
 
     public void Load()
     {
@@ -196,6 +210,10 @@ public sealed class AppState : INotifyPropertyChanged
         if (pick.Label.Length == 0) await NameLocationAsync(new GeoPoint(pick.Lat, pick.Lon));
     }
 
+    #endregion
+
+    #region Lifecycle
+
     public void Start()
     {
         _dispatcher = DispatcherQueue.GetForCurrentThread();
@@ -221,6 +239,10 @@ public sealed class AppState : INotifyPropertyChanged
         else if (!Config.Notifications.SetupCompleted)
             Views.SettingsWindow.Show();
     }
+
+    #endregion
+
+    #region Mosque and favorites
 
     public async Task ApplyMosqueAsync(MapSelect pick)
     {
@@ -255,8 +277,12 @@ public sealed class AppState : INotifyPropertyChanged
         if (favs.Count < 2) return Task.CompletedTask;
         var currentId = Config.Mosque?.MasjidId;
         var idx = favs.FindIndex(f => f.MasjidId.Equals(currentId, StringComparison.OrdinalIgnoreCase));
-        if (idx < 0) idx = 0;
-        var next = favs[(idx + delta % favs.Count + favs.Count) % favs.Count];
+        // Current mosque is not favorited: next → first, prev → last (don't pretend we're already on [0]).
+        MosqueSelection next;
+        if (idx < 0)
+            next = delta >= 0 ? favs[0] : favs[^1];
+        else
+            next = favs[(idx + delta % favs.Count + favs.Count) % favs.Count];
         return SwitchFavoriteAsync(next);
     }
 
@@ -285,6 +311,10 @@ public sealed class AppState : INotifyPropertyChanged
         ResolveSource();
         Tick();
     }
+
+    #endregion
+
+    #region Location
 
     private bool WantsLocation => Config.Times != TimesSource.Mosque && Config.Location.Auto;
 
@@ -334,6 +364,10 @@ public sealed class AppState : INotifyPropertyChanged
             Log.Information(ex, "Could not name the location yet");
         }
     }
+
+    #endregion
+
+    #region Refresh and offline cache
 
     public async Task RefreshAsync(bool force)
     {
@@ -397,10 +431,7 @@ public sealed class AppState : INotifyPropertyChanged
     private MosqueTimetable MergeIntoCache(MosqueTimetable fresh)
     {
         if (_table is not { } old || old.Slug != fresh.Slug) return fresh;
-        foreach (var (key, day) in fresh.Days) old.Days[key] = day;
-        old.Name = fresh.Name;
-        old.Latitude ??= fresh.Latitude;
-        old.Longitude ??= fresh.Longitude;
+        old.OverlayPublished(fresh);
         return old;
     }
 
@@ -417,6 +448,10 @@ public sealed class AppState : INotifyPropertyChanged
         }
         if (changed) Persist();
     }
+
+    #endregion
+
+    #region Source resolution and freshness
 
     private void UseTimetable(MosqueTimetable? table)
     {
@@ -490,6 +525,10 @@ public sealed class AppState : INotifyPropertyChanged
         _today = _window.Where(s => s.Date == today).ToList();
         _ledger.PruneBefore(today.AddDays(-2));
     }
+
+    #endregion
+
+    #region Tick, flyout rows, and alerts
 
     private void Tick()
     {
@@ -592,6 +631,10 @@ public sealed class AppState : INotifyPropertyChanged
         }
     }
 
+    #endregion
+
+    #region Property change helpers
+
     private void RaiseDisplayMode()
     {
         var mode = ChipLayout.ToDisplayMode(Config.ChipSize);
@@ -605,4 +648,6 @@ public sealed class AppState : INotifyPropertyChanged
         foreach (var n in names)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
     }
+
+    #endregion
 }

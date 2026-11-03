@@ -13,6 +13,8 @@ $Repo = "AbdulrahmanKikia/mawaqit-taskbar"
 $Api = "https://api.github.com/repos/$Repo/releases/latest"
 $DownloadPrefix = "https://github.com/$Repo/releases/download/"
 
+# --- Helpers: URL allowlist, expected digest, file hash gate ---
+
 function Test-TrustedReleaseUrl([string]$Url) {
     if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
     return $Url.StartsWith($DownloadPrefix, [StringComparison]::OrdinalIgnoreCase)
@@ -58,6 +60,8 @@ function Assert-FileSha256([string]$Path, [string]$ExpectedHex) {
     }
 }
 
+# --- Resolve latest release assets ---
+
 Write-Host "Mawaqit Widget - downloading latest release..."
 Write-Host ""
 
@@ -74,6 +78,8 @@ $portable = $release.assets | Where-Object { $_.name -match '^MawaqitWidget-Port
 
 $Temp = Join-Path $env:TEMP ("mawaqit-widget-install-" + [guid]::NewGuid().ToString("n"))
 New-Item -ItemType Directory -Force -Path $Temp | Out-Null
+
+# --- Download, verify SHA-256, then launch Setup or Install.bat ---
 
 try {
     if ($setup) {

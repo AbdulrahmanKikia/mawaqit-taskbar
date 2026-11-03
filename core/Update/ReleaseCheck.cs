@@ -3,8 +3,11 @@ using System.Text.RegularExpressions;
 
 namespace Mawaqit.Core;
 
+/// <summary>Version compare + SHA-256 helpers used by the in-app updater and install script.</summary>
 public static partial class ReleaseCheck
 {
+    #region Version compare
+
     public static bool IsNewer(string remote, string local)
         => Parse(remote).CompareTo(Parse(local)) > 0;
 
@@ -19,6 +22,10 @@ public static partial class ReleaseCheck
         }
         return (Part(0), Part(1), Part(2));
     }
+
+    #endregion
+
+    #region Digests
 
     [GeneratedRegex("^(?:sha256:)?([0-9a-fA-F]{64})$")]
     private static partial Regex DigestPattern();
@@ -40,6 +47,10 @@ public static partial class ReleaseCheck
             System.Text.Encoding.ASCII.GetBytes(expectedHex.ToLowerInvariant()));
     }
 
+    #endregion
+
+    #region Trusted download URLs
+
     /// <summary>True when <paramref name="url"/> is a GitHub Releases download for this repo
     /// (declared asset URL from the API; CDN redirects after GET are fine).</summary>
     public static bool IsTrustedReleaseDownloadUrl(string? url, string repo)
@@ -51,4 +62,6 @@ public static partial class ReleaseCheck
         var prefix = $"/{repo.Trim('/')}/releases/download/";
         return uri.AbsolutePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
+
+    #endregion
 }

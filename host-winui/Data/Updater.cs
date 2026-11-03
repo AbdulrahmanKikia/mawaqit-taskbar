@@ -10,6 +10,8 @@ public sealed class UpdateVerificationException(string message) : Exception(mess
 
 internal static class Updater
 {
+    #region Fetch release metadata
+
     public static async Task<LatestRelease> FetchLatestAsync(CancellationToken ct = default)
     {
         using var http = Http.Create(TimeSpan.FromSeconds(30));
@@ -42,10 +44,15 @@ internal static class Updater
 
     public static bool IsNewer(string remote, string local) => ReleaseCheck.IsNewer(remote, local);
 
+    #endregion
+
+    #region Download, verify, launch
+
     /// <summary>Downloads the installer, checks its SHA-256 against the release, and only
     /// then starts it. A missing or wrong checksum means nothing is run.</summary>
     public static async Task DownloadVerifyAndLaunchAsync(LatestRelease release, CancellationToken ct = default)
     {
+        // --- Allowlist: only this repo's GitHub Releases download URLs ---
         if (!ReleaseCheck.IsTrustedReleaseDownloadUrl(release.SetupUrl, AppState.Repo))
             throw new UpdateVerificationException("The installer download URL is not a trusted GitHub Releases link.");
         if (release.Sha256Url is { } sumUrl && !ReleaseCheck.IsTrustedReleaseDownloadUrl(sumUrl, AppState.Repo))
@@ -58,6 +65,7 @@ internal static class Updater
         if (expected is null)
             throw new UpdateVerificationException("The release has no checksum, so the installer was not run.");
 
+        // --- Download + first hash (stream still open, exclusive) ---
         var dest = Path.Combine(Path.GetTempPath(), $"{Path.GetFileNameWithoutExtension(release.SetupName)}-{Guid.NewGuid():N}.exe");
         using (var resp = await http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead, ct))
         {
@@ -73,7 +81,7 @@ internal static class Updater
             }
         }
 
-        // Re-hash immediately before launch so a same-user swap after the first check is caught.
+        // --- Re-hash immediately before launch (catches same-user swap after first check) ---
         await using (var fs = new FileStream(dest, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             if (!ReleaseCheck.MatchesSha256(fs, expected))
@@ -86,5 +94,39 @@ internal static class Updater
 
         Log.Information("Update {Version} verified (sha256 {Hash}); starting installer", release.Version, expected);
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dest) { UseShellExecute = true });
+        // Best-effort: installer may lock the file briefly; never fail the update over cleanup.
+        _ = TryDeleteTempInstallerAsync(dest);
     }
+
+    private static async Task TryDeleteTempInstallerAsync(string path)
+    {
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(i == 0 ? 5 : 10)).ConfigureAwait(false);
+                try
+                {
+                    if (!File.Exists(path)) return;
+                    File.Delete(path);
+                    if (!File.Exists(path))
+                    {
+                        Log.Debug("Removed temp installer {Path}", path);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "Temp installer still locked ({Attempt}/3): {Path}", i + 1, path);
+                }
+            }
+            Log.Debug("Left temp installer at {Path} (could not delete)", path);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Temp installer cleanup aborted for {Path}", path);
+        }
+    }
+
+    #endregion
 }

@@ -9,6 +9,8 @@ public sealed partial class WidgetPanel : UserControl
 {
     private bool _listBound;
 
+    #region Construction
+
     public WidgetPanel()
     {
         InitializeComponent();
@@ -31,6 +33,10 @@ public sealed partial class WidgetPanel : UserControl
             else DispatcherQueue.TryEnqueue(Bind);
         };
     }
+
+    #endregion
+
+    #region Bind flyout to AppState
 
     private void Bind()
     {
@@ -75,6 +81,10 @@ public sealed partial class WidgetPanel : UserControl
         tb.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    #endregion
+
+    #region Button handlers (menu, prefs, refresh, qibla, favorites)
+
     private void More_Click(object sender, RoutedEventArgs e) => ChipMenu.Show(moreBtn);
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Show();
     private void Refresh_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.RefreshAsync(true);
@@ -82,4 +92,6 @@ public sealed partial class WidgetPanel : UserControl
     private void Qibla_Click(object sender, RoutedEventArgs e) => QiblaWindow.Show();
     private void PrevFav_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.CycleFavoriteAsync(-1);
     private void NextFav_Click(object sender, RoutedEventArgs e) => _ = AppState.Current.CycleFavoriteAsync(1);
+
+    #endregion
 }

@@ -26,6 +26,8 @@ public sealed partial class WidgetSummary : UserControl
     private DisplayMode _mode = DisplayMode.Expanded;
     private bool _holdOpenedMenu;
 
+    #region Construction
+
     public WidgetSummary()
     {
         InitializeComponent();
@@ -53,6 +55,10 @@ public sealed partial class WidgetSummary : UserControl
             LocaleManager.Default.CurrentChanged -= OnLocaleChanged;
         };
     }
+
+    #endregion
+
+    #region Theme, locale, and chip visuals
 
     private void OnThemeChanged()
     {
@@ -115,6 +121,10 @@ public sealed partial class WidgetSummary : UserControl
         DisplayModeChanged?.Invoke(mode);
     }
 
+    #endregion
+
+    #region Click, right-click, and touch hold
+
     private void Toggle_Click(object sender, RoutedEventArgs e)
     {
         if (_holdOpenedMenu)
@@ -149,4 +159,6 @@ public sealed partial class WidgetSummary : UserControl
     private void Flyout_Opened(object sender, object e) => toggle.IsChecked = true;
 
     private void Flyout_Closed(object sender, object e) => toggle.IsChecked = false;
+
+    #endregion
 }
