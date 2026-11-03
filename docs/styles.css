@@ -366,6 +366,108 @@ h1 {
 }
 .guide-link { margin-top: 20px; }
 
+.whats-new {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 28px 56px;
+}
+.whats-new h2 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  letter-spacing: -0.04em;
+  margin: 0 0 16px;
+}
+.whats-new ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.whats-new li {
+  position: relative;
+  padding: 12px 0 12px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--mist);
+}
+.whats-new li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1.15em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+}
+
+.report {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 28px 96px;
+}
+.report h2 {
+  font-family: var(--display);
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  letter-spacing: -0.04em;
+  margin: 0 0 12px;
+}
+.report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 28px;
+}
+.report-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--mist);
+  font-size: 0.92rem;
+}
+.report-form input,
+.report-form select,
+.report-form textarea {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--paper);
+  font: 500 1rem/1.4 var(--sans);
+}
+.report-form textarea {
+  resize: vertical;
+  min-height: 140px;
+  font-family: var(--sans);
+}
+.report-form input:focus,
+.report-form select:focus,
+.report-form textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--teal) 55%, transparent);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--teal) 40%, var(--line));
+}
+.report-form select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--mist) 50%),
+    linear-gradient(135deg, var(--mist) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+.report-note {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
 footer {
   border-top: 1px solid var(--line);
   padding: 28px;

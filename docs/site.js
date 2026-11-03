@@ -29,9 +29,58 @@ async function bindRelease() {
     const name = setup?.name || "MawaqitWidget-Setup.exe";
     const size = mb(setup?.size);
     if (meta) meta.textContent = size ? `${tag}  ·  ${name}  ·  ${size}` : `${tag}  ·  ${name}`;
+    const notes = document.getElementById("releaseNotesLink");
+    if (notes && rel.html_url) notes.setAttribute("href", rel.html_url);
+    const ver = document.getElementById("reportVersion");
+    if (ver && !ver.value && tag.startsWith("v")) ver.placeholder = `e.g. ${tag.slice(1)}`;
   } catch {
     if (meta) meta.textContent = "Open GitHub Releases if the file does not start.";
   }
+}
+
+const KIND_LABEL = {
+  bug: "Bug / crash",
+  "wrong-times": "Wrong prayer times",
+  install: "Install / update / SmartScreen",
+  ui: "Chip, flyout, or map UI",
+  idea: "Idea / feedback",
+};
+
+function bindReportForm() {
+  const form = document.getElementById("reportForm");
+  const note = document.getElementById("reportNote");
+  if (!form) return;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const kind = document.getElementById("reportKind")?.value || "bug";
+    const version = (document.getElementById("reportVersion")?.value || "").trim();
+    const summary = (document.getElementById("reportSummary")?.value || "").trim();
+    const details = (document.getElementById("reportDetails")?.value || "").trim();
+    if (!summary || !details) {
+      if (note) {
+        note.hidden = false;
+        note.textContent = "Add a short summary and a few details before opening GitHub.";
+      }
+      return;
+    }
+    if (note) note.hidden = true;
+    const title = `[${KIND_LABEL[kind] || kind}] ${summary}`.slice(0, 200);
+    const body = [
+      `**Kind:** ${KIND_LABEL[kind] || kind}`,
+      `**App version:** ${version || "(not provided)"}`,
+      "",
+      "## What happened",
+      details,
+      "",
+      "---",
+      "_Submitted from the product site report form._",
+    ].join("\n");
+    const url =
+      `https://github.com/${REPO}/issues/new` +
+      `?title=${encodeURIComponent(title)}` +
+      `&body=${encodeURIComponent(body)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
 }
 
 function pad(n) {
@@ -101,3 +150,4 @@ document.getElementById("flyout")?.addEventListener("click", (e) => e.stopPropag
 tick();
 setInterval(tick, 1000);
 bindRelease();
+bindReportForm();

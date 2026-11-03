@@ -26,7 +26,8 @@
     </a>
     <nav>
       <a href="#live">See it</a>
-      <a href="#use">Use</a>
+      <a href="#whats-new">What’s new</a>
+      <a href="#report">Report</a>
       <a href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar">Source</a>
       <a class="nav-dl" href="#download">Download</a>
     </nav>
@@ -34,9 +35,9 @@
 
   <main>
     <section class="hero">
-      <p class="kicker">Windows 11 · times from Mawaqit</p>
+      <p class="kicker">Windows 11 · times from Mawaqit · v0.5.2</p>
       <h1>The next prayer,<br>where your eyes already go.</h1>
-      <p class="lede">A chip inside the taskbar, or a strip that keeps windows off the bottom of the screen. Left-click the schedule. Right-click your mosque. MIT.</p>
+      <p class="lede">A chip inside the taskbar, or a strip that keeps windows off the bottom of the screen. Offline after the first mosque load. English, French, Arabic. MIT.</p>
       <div class="cta">
         <a id="btnSetup" class="btn primary" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">
           Download Setup.exe
@@ -46,6 +47,18 @@
         </a>
       </div>
       <p class="release" id="releaseMeta">Fetching the latest build…</p>
+    </section>
+
+    <section id="whats-new" class="whats-new" aria-labelledby="new-title">
+      <h2 id="new-title">What’s new in 0.5.2</h2>
+      <ul>
+        <li>Stronger install and update checks (SHA-256, trusted download URLs)</li>
+        <li>Offline yearly timetable per mosque — restart without internet after the first load</li>
+        <li>Touch-friendly chip menu, favorite arrows, manual chip position</li>
+        <li>Map WebView locked to the local host; Qibla and OpenStreetMap mosques</li>
+        <li>English, French, and Arabic (RTL for Arabic)</li>
+      </ul>
+      <p class="guide-link"><a id="releaseNotesLink" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/releases/latest">Full release notes</a></p>
     </section>
 
     <section id="live" class="stage" aria-labelledby="live-title">
@@ -125,11 +138,45 @@
       </div>
       <ul class="reqs">
         <li>Windows 11, 64-bit, build 22000+</li>
-        <li>Internet</li>
+        <li>Internet for the first mosque load (then works offline)</li>
         <li>WebView2 (already on most PCs) for the mosque map</li>
         <li>Windows App SDK 1.5 is bundled</li>
       </ul>
       <p class="guide-link"><a href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/blob/master/USER_GUIDE.md">User guide</a></p>
+    </section>
+
+    <section id="report" class="report" aria-labelledby="report-title">
+      <h2 id="report-title">Something off? Tell us.</h2>
+      <p class="lede">Bugs, weird chip behavior, wrong times, install friction — open a GitHub issue with the details below. A free GitHub account is required to submit.</p>
+      <form id="reportForm" class="report-form" novalidate>
+        <label>
+          <span>What kind of report?</span>
+          <select id="reportKind" name="kind" required>
+            <option value="bug">Bug / crash</option>
+            <option value="wrong-times">Wrong prayer times</option>
+            <option value="install">Install / update / SmartScreen</option>
+            <option value="ui">Chip, flyout, or map UI</option>
+            <option value="idea">Idea / feedback</option>
+          </select>
+        </label>
+        <label>
+          <span>App version (About in Preferences, or leave blank)</span>
+          <input id="reportVersion" name="version" type="text" placeholder="e.g. 0.5.2" maxlength="32" autocomplete="off"/>
+        </label>
+        <label>
+          <span>Short summary</span>
+          <input id="reportSummary" name="summary" type="text" required maxlength="120" placeholder="Chip disappeared after sleep" autocomplete="off"/>
+        </label>
+        <label>
+          <span>What happened?</span>
+          <textarea id="reportDetails" name="details" required rows="6" maxlength="4000" placeholder="Steps to reproduce, Windows build if you know it, screenshots you can attach after the issue opens…"></textarea>
+        </label>
+        <div class="report-actions">
+          <button type="submit" class="btn primary">Open issue on GitHub</button>
+          <a class="btn ghost" href="https://github.com/AbdulrahmanKikia/mawaqit-taskbar/issues">Browse existing issues</a>
+        </div>
+        <p class="report-note" id="reportNote" hidden></p>
+      </form>
     </section>
   </main>
 
