@@ -18,7 +18,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <Product>Mawaqit Widget</Product>
     <Authors>AbdulrahmanKikia</Authors>
     <Description>Taskbar prayer-times widget using Mawaqit data</Description>

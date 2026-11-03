@@ -22,7 +22,7 @@ public sealed class AppState : INotifyPropertyChanged
 {
     #region Constants and shared state
 
-    public const string Version = "0.5.1";
+    public const string Version = "0.5.2";
     public const string Repo = "AbdulrahmanKikia/mawaqit-taskbar";
 
     /// <summary>Times are re-read this often so mosque edits (iqama changes) show up.</summary>
